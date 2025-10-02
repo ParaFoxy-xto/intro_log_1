@@ -1,0 +1,11 @@
+﻿Origem/Destino;Depósito (Carrefour STN);CLS 307;CLS 114;CLN 110;SOF (Água Mineral);SHIS QI 17 (Lago Sul);CLSW 103;Varjão (entrada);Águas Claras (shopping);Taguatinga Pistão Sul
+Depósito (Carrefour STN);0;12;14;4.6;5.4;19;11;6.3;24;26
+CLS 307;12;0;3;8.5;12;10;5.6;15;19;21
+CLS 114;15;3.4;0;11;14;8.5;4.7;17;17;19
+CLN 110;4;7.7;10;0;9.1;15;8.8;7.8;23;25
+SOF (Água Mineral);4.7;11;12;9.4;0;19;8.5;8.9;19;21
+SHIS QI 17 (Lago Sul);18;10;10;15;19;0;13;21;24;24
+CLSW 103;11;5.7;4.9;8.7;9.1;13;0;15;15;17
+Varjão (entrada);5.1;15;17;7.5;8.5;22;16;0;27;29
+Águas Claras (shopping);23;18;17;23;21;22;15;27;0;4.3
+Taguatinga Pistão Sul;25;20;20;25;23;23;17;29;4.1;0
