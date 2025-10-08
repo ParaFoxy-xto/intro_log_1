@@ -1,20 +1,18 @@
 """
-run_fast.py - Versão rápida sem download do OSM
+run_with_csv_data.py - Versão que usa dados dos arquivos CSV
 
-Script otimizado para:
- - usar apenas distâncias haversine (sem grafo OSM)
- - calcular rotas com 4 heurísticas rapidamente
- - produzir programação semanal
+Script que carrega dados dos arquivos CSV em /data:
+- pontos.csv: coordenadas dos pontos
+- distancias.csv: matriz de distâncias reais
+- matriz_pontos_com_links.csv: links para rotas OSM
 
-Autor: Gabriel (versão otimizada)
+Autor: Gabriel (versão com dados CSV)
 """
 
-import math
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 import os
-from collections import defaultdict
 
 # -----------------------------
 # Dados e parâmetros
@@ -23,7 +21,7 @@ CAPACIDADE = 1800  # kg
 VEL_KMH = 50.0  # velocidade média (km/h)
 TEMPO_MAX_DIA_MIN = 6 * 60  # 6 horas em minutos
 
-# Dados de demanda e tempo de descarga (valores do problema original)
+# Dados de demanda e tempo de descarga (não estão no CSV, usando valores do problema original)
 dados_demanda = {
     "Depósito (Carrefour STN)": {"demanda": 0, "descarga": 515},
     "CLS 307": {"demanda": 160, "descarga": 50},
@@ -37,84 +35,68 @@ dados_demanda = {
     "Taguatinga Pistão Sul": {"demanda": 900, "descarga": 45},
 }
 
-# Tentar carregar dados dos CSVs se disponíveis
-def load_csv_data():
-    """Carrega dados dos arquivos CSV se disponíveis."""
-    if os.path.exists('data/pontos.csv') and os.path.exists('data/distancias.csv'):
-        try:
-            # Carregar pontos
-            pontos_df = pd.read_csv('data/pontos.csv')
-            # Carregar matriz de distâncias
-            dist_df = pd.read_csv('data/distancias.csv', sep=';', index_col=0)
-            
-            # Criar dicionário de clientes
-            clientes = {}
-            for idx, row in pontos_df.iterrows():
-                nome = row['Nome']
-                clientes[idx] = {
-                    "nome": nome,
-                    "lat": row['Latitude'],
-                    "lon": row['Longitude'],
-                    "demanda": dados_demanda[nome]["demanda"],
-                    "descarga": dados_demanda[nome]["descarga"]
-                }
-            
-            # Matriz de distâncias
-            dist_matrix = dist_df.values.astype(float)
-            
-            print("✓ Dados carregados dos CSVs (coordenadas atualizadas + distâncias reais)")
-            return clientes, dist_matrix, True
-            
-        except Exception as e:
-            print(f"Erro ao carregar CSVs: {e}")
-            print("Usando dados hardcoded...")
-            return None, None, False
-    else:
-        print("Arquivos CSV não encontrados, usando dados hardcoded...")
-        return None, None, False
+# -----------------------------
+# Carregar dados dos CSVs
+# -----------------------------
+def load_data():
+    """Carrega dados dos arquivos CSV."""
+    
+    # Carregar pontos (coordenadas)
+    pontos_df = pd.read_csv('data/pontos.csv')
+    print("✓ Pontos carregados do CSV")
+    
+    # Carregar matriz de distâncias
+    dist_df = pd.read_csv('data/distancias.csv', sep=';', index_col=0)
+    print("✓ Matriz de distâncias carregada do CSV")
+    
+    # Criar dicionário de clientes combinando os dados
+    clientes = {}
+    for idx, row in pontos_df.iterrows():
+        nome = row['Nome']
+        clientes[idx] = {
+            "nome": nome,
+            "lat": row['Latitude'],
+            "lon": row['Longitude'],
+            "demanda": dados_demanda[nome]["demanda"],
+            "descarga": dados_demanda[nome]["descarga"]
+        }
+    
+    # Converter matriz de distâncias para numpy array
+    dist_matrix = dist_df.values.astype(float)
+    
+    return clientes, dist_matrix, list(pontos_df['Nome'])
 
-# Tentar carregar dados CSV primeiro
-clientes_csv, dist_matrix_csv, using_csv = load_csv_data()
+# Carregar dados
+clientes, dist_km, nomes_pontos = load_data()
+ids = list(range(len(clientes)))
 
-if using_csv:
-    # Usar dados do CSV
-    clientes = clientes_csv
-    dist_km_from_csv = dist_matrix_csv
-    use_csv_distances = True
-else:
-    # Dados hardcoded como fallback
-    clientes = {
-        0: {"nome": "Depósito (Carrefour STN)", "lat": -15.7366, "lon": -47.90732, "demanda": 0, "descarga": 515},
-        1: {"nome": "CLS 307", "lat": -15.8122664, "lon": -47.9013959, "demanda": 160, "descarga": 50},
-        2: {"nome": "CLS 114", "lat": -15.8268977, "lon": -47.9191361, "demanda": 170, "descarga": 60},
-        3: {"nome": "CLN 110", "lat": -15.7743127, "lon": -47.88647, "demanda": 22, "descarga": 70},
-        4: {"nome": "SOF (Água Mineral)", "lat": -15.738056, "lon": -47.926667, "demanda": 300, "descarga": 85},
-        5: {"nome": "SHIS QI 17 (Lago Sul)", "lat": -15.845, "lon": -47.862, "demanda": 250, "descarga": 45},
-        6: {"nome": "CLSW 103", "lat": -15.8010635, "lon": -47.9248713, "demanda": 90, "descarga": 65},
-        7: {"nome": "Varjão (entrada)", "lat": -15.70972, "lon": -47.87889, "demanda": 130, "descarga": 55},
-        8: {"nome": "Águas Claras (shopping)", "lat": -15.84028, "lon": -48.02778, "demanda": 350, "descarga": 40},
-        9: {"nome": "Taguatinga Pistão Sul", "lat": -15.851861, "lon": -48.041972, "demanda": 900, "descarga": 45},
-    }
+print(f"\nPontos carregados: {len(clientes)}")
+for i, nome in enumerate(nomes_pontos):
+    print(f"  {i}: {nome}")
 
-# Lista de IDs (ordenada)
-ids = sorted(clientes.keys())
+print(f"\nMatriz de distâncias (km):")
+print(np.round(dist_km, 1))
 
 # -----------------------------
-# Funções utilitárias
+# Criar matriz de tempo a partir das distâncias
 # -----------------------------
-def haversine_km(lat1, lon1, lat2, lon2):
-    """Distância em km pela fórmula haversine."""
-    R = 6371.0
-    phi1 = math.radians(lat1); phi2 = math.radians(lat2)
-    dphi = phi2 - phi1
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2 * R * math.asin(math.sqrt(a))
-
 def travel_time_minutes_km(distance_km, vel_kmh=VEL_KMH):
     """Tempo de viagem em minutos para uma distância em km e velocidade média."""
     return (distance_km / vel_kmh) * 60.0
 
+# Converter distâncias para tempos
+time_min = np.zeros_like(dist_km)
+for i in range(len(dist_km)):
+    for j in range(len(dist_km)):
+        time_min[i, j] = travel_time_minutes_km(dist_km[i, j])
+
+# Mapear IDs para índices
+id_to_index = {node_id: idx for idx, node_id in enumerate(ids)}
+index_to_id = {idx: node_id for node_id, idx in id_to_index.items()}
+
+# -----------------------------
+# Funções utilitárias
+# -----------------------------
 def route_service_time_minutes(route):
     """Tempo de serviço (descargas) somado nos nós internos (exclui depósito quando 0)."""
     t = 0.0
@@ -122,44 +104,6 @@ def route_service_time_minutes(route):
         t += clientes[node_id]["descarga"] if node_id != 0 else 0.0
     return t
 
-# -----------------------------
-# Calcular matriz de distâncias
-# -----------------------------
-if use_csv_distances:
-    print("Usando matriz de distâncias do CSV (dados reais)...")
-    dist_km = dist_km_from_csv
-    # Criar matriz de tempo a partir das distâncias CSV
-    time_min = np.zeros_like(dist_km)
-    for i in range(len(dist_km)):
-        for j in range(len(dist_km)):
-            time_min[i, j] = travel_time_minutes_km(dist_km[i, j])
-else:
-    print("Calculando matriz de distâncias usando Haversine...")
-    n = len(ids)
-    dist_km = np.zeros((n, n))
-    time_min = np.zeros((n, n))
-    
-    for i_idx, i in enumerate(ids):
-        for j_idx, j in enumerate(ids):
-            if i == j:
-                dist_km[i_idx, j_idx] = 0.0
-                time_min[i_idx, j_idx] = 0.0
-                continue
-            
-            km = haversine_km(clientes[i]["lat"], clientes[i]["lon"], clientes[j]["lat"], clientes[j]["lon"])
-            dist_km[i_idx, j_idx] = km
-            time_min[i_idx, j_idx] = travel_time_minutes_km(km)
-
-# Mapear IDs para índices
-id_to_index = {node_id: idx for idx, node_id in enumerate(ids)}
-index_to_id = {idx: node_id for node_id, idx in id_to_index.items()}
-
-print("Matriz de distâncias (km):")
-print(np.round(dist_km, 3))
-
-# -----------------------------
-# Funções para avaliar rotas
-# -----------------------------
 def route_distance_and_time(route):
     """
     route: lista de client IDs (ex: [0, 3, 5, 0])
@@ -181,7 +125,7 @@ def route_load(route):
     return sum(clientes[node]["demanda"] for node in route if node != 0)
 
 # -----------------------------
-# Heurísticas
+# Heurísticas (mesmas do run_fast.py)
 # -----------------------------
 def sweep_routes():
     depot = clientes[0]
@@ -190,7 +134,7 @@ def sweep_routes():
         if i == 0: continue
         dx = clientes[i]["lon"] - depot["lon"]
         dy = clientes[i]["lat"] - depot["lat"]
-        ang = math.atan2(dy, dx)
+        ang = np.arctan2(dy, dx)
         angles.append((i, ang))
     angles.sort(key=lambda x: x[1])
     routes = []
@@ -295,7 +239,7 @@ def clarke_wright_routes():
 # -----------------------------
 # Gerar rotas com cada heurística
 # -----------------------------
-print("Gerando rotas com heurísticas (processamento rápido)...")
+print("\nGerando rotas com heurísticas (usando dados CSV reais)...")
 
 routes_sweep = sweep_routes()
 routes_nearest = nearest_neighbor_routes(farthest=False)
@@ -378,12 +322,12 @@ for name, routes in all_solutions.items():
     results[name] = summarize_and_schedule(routes, name)
 
 # -----------------------------
-# Visualização simples (sem OSM)
+# Visualização com dados CSV
 # -----------------------------
 try:
     sol_name = "ClarkeWright"
     sol = results[sol_name]["summary"]
-    print(f"\nPlotando rotas da solução {sol_name}...")
+    print(f"\nPlotando rotas da solução {sol_name} (usando dados CSV)...")
     fig, ax = plt.subplots(figsize=(12, 10))
     
     # plotar pontos
@@ -408,7 +352,7 @@ try:
     
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
-    ax.set_title(f'Rotas ({sol_name}) - Brasília\nUsando {"distâncias CSV reais" if use_csv_distances else "distâncias Haversine"}')
+    ax.set_title(f'Rotas ({sol_name}) - Brasília\nUsando distâncias reais dos dados CSV')
     ax.grid(True, alpha=0.3)
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
@@ -417,8 +361,6 @@ try:
 except Exception as e:
     print("Plot falhou:", e)
 
-print("\nExecução finalizada rapidamente! Consulte as rotas e programação impressas acima.")
-if use_csv_distances:
-    print("✓ Usando dados CSV: pontos.csv + distancias.csv")
-else:
-    print("✓ Usando cálculos Haversine (coloque arquivos CSV em /data para usar dados reais)")
+print("\nExecução finalizada com dados CSV! Consulte as rotas e programação impressas acima.")
+print("✓ Coordenadas: pontos.csv")
+print("✓ Distâncias: distancias.csv (dados reais de roteamento)")
