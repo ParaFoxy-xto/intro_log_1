@@ -1,33 +1,18 @@
 """
-vrp_brasilia_osmnx.py
+run_fast.py - Versão rápida sem download do OSM
 
-Script completo para:
- - baixar grafo viário de Brasília (OSMnx)
- - mapear clientes ao grafo
- - calcular matrizes de distância/tempo reais
- - gerar rotas com 4 heurísticas: Clarke & Wright, Nearest Neighbor,
-   Farthest Neighbor e Sweep (por ângulo)
- - verificar capacidade (1800 kg) e tempo máximo por dia (6h)
- - produzir programação semanal (dias com rotas, sem exceder 6h/dia)
+Script otimizado para:
+ - usar apenas distâncias haversine (sem grafo OSM)
+ - calcular rotas com 4 heurísticas rapidamente
+ - produzir programação semanal
 
-Autor: Gabriel (adaptado para seu dever)
+Autor: Gabriel (versão otimizada)
 """
 
 import math
-import os
-import sys
-import time
-from collections import defaultdict, deque
-import itertools
-
-import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
-import osmnx as ox
-
-# OSMnx 2.x configuration
-ox.settings.use_cache = True
-ox.settings.log_console = False
+from collections import defaultdict
 
 # -----------------------------
 # Dados e parâmetros
@@ -57,7 +42,7 @@ ids = sorted(clientes.keys())
 # Funções utilitárias
 # -----------------------------
 def haversine_km(lat1, lon1, lat2, lon2):
-    """Distância em km pela fórmula haversine (usar só como fallback/checar)."""
+    """Distância em km pela fórmula haversine."""
     R = 6371.0
     phi1 = math.radians(lat1); phi2 = math.radians(lat2)
     dphi = phi2 - phi1
@@ -77,58 +62,14 @@ def route_service_time_minutes(route):
     return t
 
 # -----------------------------
-# Baixar grafo OSM de Brasília (drive) - versão simplificada
+# Calcular matriz de distâncias (RÁPIDO - sem OSM)
 # -----------------------------
-print("Baixando/obtendo grafo de Brasília (pode demorar alguns segundos)...")
-# Usando área mínima que cobre apenas os pontos de entrega
-# Calculada com base nas coordenadas min/max dos clientes com margem pequena
-bbox = (-15.70, -15.86, -47.86, -48.05)  # (north, south, east, west) - área muito reduzida
-try:
-    G = ox.graph_from_bbox(bbox, network_type="drive", simplify=True)
-except Exception as e:
-    print(f"Erro ao baixar grafo OSM: {e}")
-    print("Usando distâncias haversine como fallback...")
-    # Criar um grafo vazio para continuar com cálculos haversine
-    G = None
-# Garantir que 'length' existe (se o grafo foi carregado)
-if G is not None:
-    for u, v, k, data in G.edges(keys=True, data=True):
-        if 'length' not in data:
-            data['length'] = ox.distance.great_circle_vec(G.nodes[u]['y'], G.nodes[u]['x'],
-                                                           G.nodes[v]['y'], G.nodes[v]['x'])
-
-# -----------------------------
-# Mapear coordenadas para nós do grafo (se disponível)
-# -----------------------------
-if G is not None:
-    print("Mapeando clientes para nós OSM (nearest nodes)...")
-    coords = {i: (clientes[i]["lat"], clientes[i]["lon"]) for i in ids}
-    # osmnx expects (lat, lon) but nearest_nodes takes (G, X, Y) where X=lon, Y=lat
-    nearest_node = {}
-    for i in ids:
-        lat, lon = coords[i]
-        try:
-            nearest_node[i] = ox.distance.nearest_nodes(G, lon, lat)
-        except Exception as e:
-            print(f"Erro ao mapear cliente {i}: {e}")
-            nearest_node[i] = None
-else:
-    print("Usando cálculos diretos de distância (sem mapeamento OSM)...")
-    nearest_node = None
-
-# -----------------------------
-# Construir matriz de distâncias (km) e tempos (min)
-# usando shortest_path_length com weight='length' (metros)
-# -----------------------------
+print("Calculando matriz de distâncias usando Haversine (muito mais rápido)...")
 n = len(ids)
 dist_km = np.zeros((n, n))
 time_min = np.zeros((n, n))
 id_to_index = {node_id: idx for idx, node_id in enumerate(ids)}
 index_to_id = {idx: node_id for node_id, idx in id_to_index.items()}
-
-print("Calculando matriz de distâncias reais (usando o grafo OSM ou haversine) — isso pode demorar um pouco...")
-# Precompute pairwise shortest path lengths (meters)
-# Use node IDs from nearest_node mapping
 
 for i_idx, i in enumerate(ids):
     for j_idx, j in enumerate(ids):
@@ -137,20 +78,7 @@ for i_idx, i in enumerate(ids):
             time_min[i_idx, j_idx] = 0.0
             continue
         
-        # Tentar usar OSM se disponível, senão usar haversine
-        if G is not None and nearest_node is not None and nearest_node.get(i) is not None and nearest_node.get(j) is not None:
-            u = nearest_node[i]
-            v = nearest_node[j]
-            try:
-                length_m = nx.shortest_path_length(G, u, v, weight="length")
-                km = length_m / 1000.0
-            except (nx.NetworkXNoPath, nx.NodeNotFound):
-                # fallback to haversine if no path found
-                km = haversine_km(clientes[i]["lat"], clientes[i]["lon"], clientes[j]["lat"], clientes[j]["lon"])
-        else:
-            # usar haversine diretamente
-            km = haversine_km(clientes[i]["lat"], clientes[i]["lon"], clientes[j]["lat"], clientes[j]["lon"])
-        
+        km = haversine_km(clientes[i]["lat"], clientes[i]["lon"], clientes[j]["lat"], clientes[j]["lon"])
         dist_km[i_idx, j_idx] = km
         time_min[i_idx, j_idx] = travel_time_minutes_km(km)
 
@@ -172,7 +100,7 @@ def route_distance_and_time(route):
         j = id_to_index[b]
         total_km += dist_km[i, j]
         total_time_min += time_min[i, j]
-    # adicionar tempo de descarga para nós não-depósito (se rota contém depósito como 0, ignore depositos)
+    # adicionar tempo de descarga para nós não-depósito
     total_time_min += route_service_time_minutes(route)
     return total_km, total_time_min
 
@@ -183,7 +111,6 @@ def route_load(route):
 # -----------------------------
 # Heurísticas
 # -----------------------------
-# 1) Sweep (varredura por ângulo)
 def sweep_routes():
     depot = clientes[0]
     angles = []
@@ -193,30 +120,25 @@ def sweep_routes():
         dy = clientes[i]["lat"] - depot["lat"]
         ang = math.atan2(dy, dx)
         angles.append((i, ang))
-    angles.sort(key=lambda x: x[1])  # ordena por ângulo crescente
+    angles.sort(key=lambda x: x[1])
     routes = []
     current_route = [0]
     current_load = 0
     for i, ang in angles:
         demand = clientes[i]["demanda"]
-        # Tentativa de inserir no route atual e checar se tempo e capacidade aceitam (simulando inserção no final)
         tentative_route = current_route + [i, 0]
         load_if = current_load + demand
         if load_if <= CAPACIDADE:
-            # calcular tempo se inserirmos
             dist_km_val, time_min_val = route_distance_and_time(tentative_route)
             if time_min_val <= TEMPO_MAX_DIA_MIN:
-                # aceita
                 current_route = current_route + [i]
                 current_load = load_if
             else:
-                # fecha rota atual e inicia nova
                 current_route.append(0)
                 routes.append(current_route)
                 current_route = [0, i]
                 current_load = demand
         else:
-            # fecha e inicia nova
             current_route.append(0)
             routes.append(current_route)
             current_route = [0, i]
@@ -225,9 +147,7 @@ def sweep_routes():
     routes.append(current_route)
     return routes
 
-# 2) Nearest Neighbor (Vizinho mais próximo) - constrói rotas greedy respeitando capacidade e tempo
 def nearest_neighbor_routes(farthest=False):
-    """Se farthest=False => nearest neighbor; farthest=True => pick farthest next (vizinho mais distante)."""
     unserved = set(i for i in ids if i != 0)
     routes = []
     while unserved:
@@ -238,7 +158,6 @@ def nearest_neighbor_routes(farthest=False):
             candidates = list(unserved)
             if not candidates:
                 break
-            # escolher próximo (ou mais distante) ao nó corrente baseado em dist_km matrix
             cur_idx = id_to_index[cur]
             best = None
             best_val = None
@@ -249,32 +168,25 @@ def nearest_neighbor_routes(farthest=False):
                 else:
                     if (not farthest and val < best_val) or (farthest and val > best_val):
                         best = c; best_val = val
-            # testar se inserir best viola carga/tempo
             tentative_route = route + [best, 0]
             tentative_load = load + clientes[best]["demanda"]
             if tentative_load <= CAPACIDADE:
                 dist_km_val, time_min_val = route_distance_and_time(tentative_route)
                 if time_min_val <= TEMPO_MAX_DIA_MIN:
-                    # aceitar
                     route.append(best)
                     load = tentative_load
                     unserved.remove(best)
                     cur = best
                     continue
-            # se não aceitou, fechamos a rota atual
             break
         route.append(0)
         routes.append(route)
     return routes
 
-# 3) Clarke & Wright Savings
 def clarke_wright_routes():
-    # Inicialmente cada cliente (não-depósito) em sua própria rota 0-i-0
     routes = {i: [0, i, 0] for i in ids if i != 0}
     route_loads = {i: clientes[i]["demanda"] for i in ids if i != 0}
-    # Distâncias depot->i and i->j (use dist_km)
     depot_idx = id_to_index[0]
-    # savings s_ij = d_0i + d_0j - d_ij
     savings = []
     for i in ids:
         if i == 0: continue
@@ -283,7 +195,6 @@ def clarke_wright_routes():
             s = dist_km[depot_idx, id_to_index[i]] + dist_km[depot_idx, id_to_index[j]] - dist_km[id_to_index[i], id_to_index[j]]
             savings.append((s, i, j))
     savings.sort(reverse=True, key=lambda x: x[0])
-    # map client -> route key
     client_route_key = {i: i for i in ids if i != 0}
     for s, i, j in savings:
         ri_key = client_route_key.get(i)
@@ -292,35 +203,27 @@ def clarke_wright_routes():
             continue
         ri = routes[ri_key]
         rj = routes[rj_key]
-        # verificar se i está na extremidade direita de ri (antes do 0) and j está na extremidade esquerda de rj (após o 0)
-        # para poder concatenar ri + rj (sem duplicar depósito)
         if ri[-2] == i and rj[1] == j:
             new_load = route_loads[ri_key] + route_loads[rj_key]
             if new_load <= CAPACIDADE:
-                # tentativa de rota concatenada
                 new_route = ri[:-1] + rj[1:]
-                # verificar tempo da nova rota
                 dist_km_val, time_min_val = route_distance_and_time(new_route)
                 if time_min_val <= TEMPO_MAX_DIA_MIN:
-                    # fazer merge
-                    new_key = ri_key  # manter key do primeiro
+                    new_key = ri_key
                     routes[new_key] = new_route
                     route_loads[new_key] = new_load
-                    # remover rj
                     del routes[rj_key]
                     del route_loads[rj_key]
-                    # atualizar client_route_key para todos clientes em rj
                     for client in rj:
                         if client != 0:
                             client_route_key[client] = new_key
-    # Resultado em lista
     final_routes = list(routes.values())
     return final_routes
 
 # -----------------------------
 # Gerar rotas com cada heurística
 # -----------------------------
-print("Gerando rotas com heurísticas...")
+print("Gerando rotas com heurísticas (processamento rápido)...")
 
 routes_sweep = sweep_routes()
 routes_nearest = nearest_neighbor_routes(farthest=False)
@@ -355,14 +258,13 @@ def summarize_and_schedule(routes, name):
         readable = " -> ".join(clientes[n]["nome"] for n in s["route"])
         print(f"Rota {s['index']}: {readable}")
         print(f"   carga={s['load']} kg  dist={s['dist_km']:.2f} km  tempo={s['time_min']:.1f} min")
-    # agendamento semanal (dias de 1..7) - greedy first-fit: preencher dias com rotas sem exceder TEMPO_MAX_DIA_MIN
+    
+    # agendamento semanal
     days = [[] for _ in range(7)]
     days_time = [0.0 for _ in range(7)]
-    # ordenar rotas por tempo decrescente (best-fit decreasing para distribuir)
     sorted_summary = sorted(summary, key=lambda x: x["time_min"], reverse=True)
     for s in sorted_summary:
         placed = False
-        # primeira tentativa: colocar na primeira data que caiba
         for d in range(7):
             if days_time[d] + s["time_min"] <= TEMPO_MAX_DIA_MIN:
                 days[d].append(s)
@@ -370,12 +272,11 @@ def summarize_and_schedule(routes, name):
                 placed = True
                 break
         if not placed:
-            # se não coube em nenhuma, criar novo dia (mas temos só 7 dias na semana) -> marcar como overflow
-            # para efeito do trabalho, vamos ainda adicionar na semana com menor tempo (mesmo que exceda) e notificar
             min_idx = int(np.argmin(days_time))
             days[min_idx].append(s)
             days_time[min_idx] += s["time_min"]
-            print("Aviso: uma rota não coube em nenhum dia sem exceder 6h; forçando atribuição a dia de menor carga (excedente gerado).")
+            print("Aviso: uma rota não coube em nenhum dia sem exceder 6h; forçando atribuição.")
+    
     # imprimir programação
     print("\nProgramação semanal (dias com rotas):")
     for d_idx, d in enumerate(days, start=1):
@@ -385,6 +286,7 @@ def summarize_and_schedule(routes, name):
         for s in d:
             route_names = " -> ".join(clientes[n]["nome"] for n in s["route"])
             print(f"   Rota {s['index']}: carga={s['load']} kg tempo={s['time_min']:.1f} min dist={s['dist_km']:.2f} km")
+    
     # Estatísticas gerais
     total_dist = sum(s["dist_km"] for s in summary)
     total_time = sum(s["time_min"] for s in summary)
@@ -404,87 +306,43 @@ for name, routes in all_solutions.items():
     results[name] = summarize_and_schedule(routes, name)
 
 # -----------------------------
-# Visualização básica (opcional)
-# Plota o grafo e sobrepõe as rotas (usar a solução Clarke & Wright como exemplo)
+# Visualização simples (sem OSM)
 # -----------------------------
 try:
-    if G is not None:
-        sol_name = "ClarkeWright"
-        sol = results[sol_name]["summary"]
-        print(f"\nPlotando grafo com rotas da solução {sol_name}...")
-        fig, ax = ox.plot_graph(G, show=False, close=False, node_size=0, edge_color="gray", figsize=(10,10))
-        # plotar pontos
-        for i in ids:
-            lon = clientes[i]["lon"]; lat = clientes[i]["lat"]
-            if i == 0:
-                ax.scatter(lon, lat, s=80, marker='*', zorder=5)
-                ax.text(lon, lat, " DEPÓSITO", fontsize=8)
-            else:
-                ax.scatter(lon, lat, s=40, zorder=5)
-                ax.text(lon, lat, f" {i}", fontsize=7)
-        # plotar cada rota com linha entre coordenadas (usando caminho mais curto no grafo)
-        colors = ["red","blue","green","orange","purple","brown","magenta","cyan"]
-        for r_idx, r in enumerate(sol):
-            route_nodes = r["route"]
-            color = colors[r_idx % len(colors)]
-            # construir lista de graph nodes correspondentes
-            if nearest_node is not None:
-                graph_path = []
-                for a,b in zip(route_nodes[:-1], route_nodes[1:]):
-                    u = nearest_node.get(a); v = nearest_node.get(b)
-                    if u is not None and v is not None:
-                        try:
-                            sp = nx.shortest_path(G, u, v, weight="length")
-                            graph_path.extend(sp)
-                        except Exception:
-                            # ignore path errors
-                            pass
-                # extrair coords dos nós do grafo
-                # remover duplicatas consecutivas
-                unique_path = []
-                for node in graph_path:
-                    if not unique_path or unique_path[-1] != node:
-                        unique_path.append(node)
-                if unique_path:
-                    xs = [G.nodes[n]['x'] for n in unique_path]
-                    ys = [G.nodes[n]['y'] for n in unique_path]
-                    ax.plot(xs, ys, linewidth=2, alpha=0.8, color=color, zorder=3)
-            else:
-                # plotar linhas diretas entre coordenadas dos clientes
-                xs = [clientes[node]["lon"] for node in route_nodes]
-                ys = [clientes[node]["lat"] for node in route_nodes]
-                ax.plot(xs, ys, linewidth=2, alpha=0.8, color=color, zorder=3)
-        plt.title(f"Rotas ({sol_name}) sobre grafo de Brasília")
-        plt.show()
-    else:
-        print("\nVisualizacao do grafo OSM nao disponivel (usando apenas coordenadas)")
-        # Plot simples com matplotlib sem o grafo OSM
-        sol_name = "ClarkeWright"
-        sol = results[sol_name]["summary"]
-        fig, ax = plt.subplots(figsize=(10, 8))
-        # plotar pontos
-        for i in ids:
-            lon = clientes[i]["lon"]; lat = clientes[i]["lat"]
-            if i == 0:
-                ax.scatter(lon, lat, s=100, marker='*', color='red', zorder=5)
-                ax.text(lon, lat, " DEPÓSITO", fontsize=10)
-            else:
-                ax.scatter(lon, lat, s=60, color='blue', zorder=5)
-                ax.text(lon, lat, f" {i}", fontsize=8)
-        # plotar rotas com linhas diretas
-        colors = ["red","blue","green","orange","purple","brown","magenta","cyan"]
-        for r_idx, r in enumerate(sol):
-            route_nodes = r["route"]
-            color = colors[r_idx % len(colors)]
-            xs = [clientes[node]["lon"] for node in route_nodes]
-            ys = [clientes[node]["lat"] for node in route_nodes]
-            ax.plot(xs, ys, linewidth=2, alpha=0.8, color=color, zorder=3)
-        ax.set_xlabel('Longitude')
-        ax.set_ylabel('Latitude')
-        plt.title(f"Rotas ({sol_name}) - Brasília")
-        plt.grid(True, alpha=0.3)
-        plt.show()
+    sol_name = "ClarkeWright"
+    sol = results[sol_name]["summary"]
+    print(f"\nPlotando rotas da solução {sol_name}...")
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
+    # plotar pontos
+    for i in ids:
+        lon = clientes[i]["lon"]; lat = clientes[i]["lat"]
+        if i == 0:
+            ax.scatter(lon, lat, s=150, marker='*', color='red', zorder=5, label='Depósito')
+            ax.text(lon, lat + 0.005, " DEPÓSITO", fontsize=10, ha='center')
+        else:
+            ax.scatter(lon, lat, s=80, color='blue', zorder=5)
+            ax.text(lon, lat + 0.003, f" {i}", fontsize=9, ha='center')
+    
+    # plotar rotas com linhas diretas
+    colors = ["red","blue","green","orange","purple","brown","magenta","cyan"]
+    for r_idx, r in enumerate(sol):
+        route_nodes = r["route"]
+        color = colors[r_idx % len(colors)]
+        xs = [clientes[node]["lon"] for node in route_nodes]
+        ys = [clientes[node]["lat"] for node in route_nodes]
+        ax.plot(xs, ys, linewidth=3, alpha=0.7, color=color, zorder=3, 
+                label=f'Rota {r_idx} ({r["load"]}kg, {r["time_min"]:.0f}min)')
+    
+    ax.set_xlabel('Longitude')
+    ax.set_ylabel('Latitude')
+    ax.set_title(f'Rotas ({sol_name}) - Brasília\nDistâncias calculadas por Haversine')
+    ax.grid(True, alpha=0.3)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.show()
+    
 except Exception as e:
     print("Plot falhou:", e)
 
-print("\nExecução finalizada. Consulte as rotas e programação impressas acima.")
+print("\nExecução finalizada rapidamente! Consulte as rotas e programação impressas acima.")
