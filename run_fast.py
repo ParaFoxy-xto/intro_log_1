@@ -22,6 +22,7 @@ from collections import defaultdict
 CAPACIDADE = 1800  # kg
 VEL_KMH = 50.0  # velocidade média (km/h)
 TEMPO_MAX_DIA_MIN = 6 * 60  # 6 horas em minutos
+CUSTO_VARIAVEL_HORA = 0.00213  # variável por hora (custo)
 
 # Dados de demanda e tempo de descarga (valores do problema original)
 dados_demanda = {
@@ -176,6 +177,15 @@ def route_distance_and_time(route):
     total_time_min += route_service_time_minutes(route)
     return total_km, total_time_min
 
+def route_cost(route):
+    """
+    Calcula o custo da rota: distância × carga × variável_por_hora
+    """
+    distance_km, _ = route_distance_and_time(route)
+    load_kg = route_load(route)
+    cost = distance_km * load_kg * CUSTO_VARIAVEL_HORA
+    return cost
+
 def route_load(route):
     """Soma de demandas (kg) dos clientes no route (exclui depósito 0)."""
     return sum(clientes[node]["demanda"] for node in route if node != 0)
@@ -318,18 +328,20 @@ def summarize_and_schedule(routes, name):
     for idx, r in enumerate(routes):
         dist_km_val, time_min_val = route_distance_and_time(r)
         load = route_load(r)
+        cost = route_cost(r)
         summary.append({
             "index": idx,
             "route": r,
             "dist_km": dist_km_val,
             "time_min": time_min_val,
             "load": load,
+            "cost": cost,
         })
     # imprimir rotas
     for s in summary:
         readable = " -> ".join(clientes[n]["nome"] for n in s["route"])
         print(f"Rota {s['index']}: {readable}")
-        print(f"   carga={s['load']} kg  dist={s['dist_km']:.2f} km  tempo={s['time_min']:.1f} min")
+        print(f"   carga={s['load']} kg  dist={s['dist_km']:.2f} km  tempo={s['time_min']:.1f} min  custo={s['cost']:.2f}")
     
     # agendamento semanal
     days = [[] for _ in range(7)]
@@ -357,13 +369,14 @@ def summarize_and_schedule(routes, name):
         print(f" Dia {d_idx}: tempo_total={days_time[d_idx-1]:.1f} min")
         for s in d:
             route_names = " -> ".join(clientes[n]["nome"] for n in s["route"])
-            print(f"   Rota {s['index']}: carga={s['load']} kg tempo={s['time_min']:.1f} min dist={s['dist_km']:.2f} km")
+            print(f"   Rota {s['index']}: carga={s['load']} kg tempo={s['time_min']:.1f} min dist={s['dist_km']:.2f} km custo={s['cost']:.2f}")
     
     # Estatísticas gerais
     total_dist = sum(s["dist_km"] for s in summary)
     total_time = sum(s["time_min"] for s in summary)
     total_load = sum(s["load"] for s in summary)
-    print(f"\nResumo {name}: rotas={len(summary)}  distancia_total={total_dist:.2f} km  tempo_total={total_time:.1f} min  carga_total_semana={total_load:.1f} kg")
+    total_cost = sum(s["cost"] for s in summary)
+    print(f"\nResumo {name}: rotas={len(summary)}  distancia_total={total_dist:.2f} km  tempo_total={total_time:.1f} min  carga_total_semana={total_load:.1f} kg  custo_total={total_cost:.2f}")
     return {
         "summary": summary,
         "days": days,
@@ -371,6 +384,7 @@ def summarize_and_schedule(routes, name):
         "total_dist": total_dist,
         "total_time": total_time,
         "total_load": total_load,
+        "total_cost": total_cost,
     }
 
 results = {}
@@ -378,39 +392,51 @@ for name, routes in all_solutions.items():
     results[name] = summarize_and_schedule(routes, name)
 
 # -----------------------------
-# Visualização simples (sem OSM)
+# Visualização de todas as soluções
 # -----------------------------
 try:
-    sol_name = "ClarkeWright"
-    sol = results[sol_name]["summary"]
-    print(f"\nPlotando rotas da solução {sol_name}...")
-    fig, ax = plt.subplots(figsize=(12, 10))
+    print(f"\nPlotando rotas de todas as soluções...")
+    fig, axes = plt.subplots(2, 2, figsize=(20, 16))
+    axes = axes.flatten()
     
-    # plotar pontos
-    for i in ids:
-        lon = clientes[i]["lon"]; lat = clientes[i]["lat"]
-        if i == 0:
-            ax.scatter(lon, lat, s=150, marker='*', color='red', zorder=5, label='Depósito')
-            ax.text(lon, lat + 0.005, " DEPÓSITO", fontsize=10, ha='center')
-        else:
-            ax.scatter(lon, lat, s=80, color='blue', zorder=5)
-            ax.text(lon, lat + 0.003, f" {i}", fontsize=9, ha='center')
+    heuristic_names = ["Sweep", "Nearest", "Farthest", "ClarkeWright"]
     
-    # plotar rotas com linhas diretas
-    colors = ["red","blue","green","orange","purple","brown","magenta","cyan"]
-    for r_idx, r in enumerate(sol):
-        route_nodes = r["route"]
-        color = colors[r_idx % len(colors)]
-        xs = [clientes[node]["lon"] for node in route_nodes]
-        ys = [clientes[node]["lat"] for node in route_nodes]
-        ax.plot(xs, ys, linewidth=3, alpha=0.7, color=color, zorder=3, 
-                label=f'Rota {r_idx} ({r["load"]}kg, {r["time_min"]:.0f}min)')
+    for idx, sol_name in enumerate(heuristic_names):
+        ax = axes[idx]
+        sol = results[sol_name]["summary"]
+        
+        # plotar pontos
+        for i in ids:
+            lon = clientes[i]["lon"]; lat = clientes[i]["lat"]
+            nome = clientes[i]["nome"]
+            if i == 0:
+                ax.scatter(lon, lat, s=150, marker='*', color='red', zorder=5)
+                ax.text(lon, lat + 0.005, " DEPÓSITO", fontsize=8, ha='center')
+            else:
+                ax.scatter(lon, lat, s=80, color='blue', zorder=5)
+                # Usar nome do POI em vez do número
+                ax.text(lon, lat + 0.003, f" {nome}", fontsize=6, ha='center', 
+                       bbox=dict(boxstyle="round,pad=0.2", facecolor='white', alpha=0.7))
+        
+        # plotar rotas com linhas diretas
+        colors = ["red","blue","green","orange","purple","brown","magenta","cyan"]
+        for r_idx, r in enumerate(sol):
+            route_nodes = r["route"]
+            color = colors[r_idx % len(colors)]
+            xs = [clientes[node]["lon"] for node in route_nodes]
+            ys = [clientes[node]["lat"] for node in route_nodes]
+            ax.plot(xs, ys, linewidth=2, alpha=0.7, color=color, zorder=3)
+        
+        # Configurar gráfico
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        total_cost = results[sol_name]["total_cost"]
+        total_dist = results[sol_name]["total_dist"]
+        num_routes = len(sol)
+        ax.set_title(f'{sol_name}\n{num_routes} rotas, {total_dist:.1f}km, custo={total_cost:.2f}')
+        ax.grid(True, alpha=0.3)
     
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
-    ax.set_title(f'Rotas ({sol_name}) - Brasília\nUsando {"distâncias CSV reais" if use_csv_distances else "distâncias Haversine"}')
-    ax.grid(True, alpha=0.3)
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.suptitle(f'Comparação de Heurísticas - Brasília\nUsando {"distâncias CSV reais" if use_csv_distances else "distâncias Haversine"}', fontsize=16)
     plt.tight_layout()
     plt.show()
     
