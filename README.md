@@ -1,5 +1,3 @@
-Perfeito! Aqui está um **README.md** completo para o seu projeto `VRP Brasília OSMnx`:
-
 ```markdown
 # Roteirização de Entregas em Brasília (VRP) - OSMnx
 

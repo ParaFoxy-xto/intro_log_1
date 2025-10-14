@@ -11,11 +11,11 @@ Autor: Gabriel
 
 import math
 import os
-import pandas as pd
+import pandas as pd 
 import numpy as np
 import matplotlib.pyplot as plt
-import networkx as nx
-import osmnx as ox
+import networkx as nx 
+import osmnx as ox  
 import folium
 from folium import plugins
 
@@ -48,7 +48,7 @@ print(f"✓ {len(pontos_df)} pontos carregados do CSV")
 # Criar dicionário de clientes combinando CSV + dados de demanda
 clientes = {}
 for idx, row in pontos_df.iterrows():
-    nome = row['Nome']
+    nome = str(row['Nome'])
     clientes[idx] = {
         "nome": nome,
         "lat": row['Latitude'],
@@ -237,8 +237,12 @@ for node, data in G.nodes(data=True):
         bbox['west'] <= data['x'] <= bbox['east']):
         nodes_in_bbox.append(node)
 
-G_bbox = G.subgraph(nodes_in_bbox).copy()
+G_bbox = G.subgraph(nodes_in_bbox)
 print(f"Subgrafo: {len(G_bbox.nodes)} nós, {len(G_bbox.edges)} arestas")
+
+# Convert to MultiDiGraph if needed for plotting
+if not isinstance(G_bbox, (nx.MultiGraph, nx.MultiDiGraph)):
+    G_bbox = nx.MultiDiGraph(G_bbox)
 
 fig, ax = ox.plot_graph(G_bbox, node_size=0, edge_color='#CCCCCC', 
                         edge_linewidth=0.5, bgcolor='white',
@@ -280,7 +284,7 @@ ax.set_title('Rotas de Entrega - Brasília (Clarke & Wright)\nCaminhos Reais sob
 ax.legend(loc='upper left', fontsize=10)
 
 plt.tight_layout()
-plt.savefig('rotas_brasilia.png', dpi=300, bbox_inches='tight')
+plt.savefig('output/rotas_brasilia.png', dpi=300, bbox_inches='tight')
 print("✓ Imagem salva: rotas_brasilia.png")
 plt.close()
 
@@ -375,10 +379,11 @@ for r_idx, r_info in enumerate(route_summary):
     '''
 
 legend_html += '</div>'
-m.get_root().html.add_child(folium.Element(legend_html))
+from branca.element import Element
+m.get_root().add_child(Element(legend_html))
 
 # Salvar mapa
-m.save('rotas_brasilia.html')
+m.save('output/rotas_brasilia.html')
 print("✓ Mapa HTML salvo: rotas_brasilia.html")
 
 print("\n" + "="*60)
