@@ -192,41 +192,43 @@ def remove_crossings(route):
     """
     Remove cruzamentos de uma rota usando o algoritmo 2-opt.
     O 2-opt detecta quando duas arestas se cruzam e as troca para eliminar o cruzamento.
-    
+
     Args:
         route: Lista de IDs de clientes na rota (incluindo depósito no início e fim)
-    
+
     Returns:
         Rota otimizada sem cruzamentos
     """
     if len(route) <= 3:  # Rota muito pequena, não precisa otimizar
         return route
-    
+
     improved = True
     best_route = route[:]
-    
+
     while improved:
         improved = False
         best_distance, _ = route_distance_and_time(best_route)
-        
+
         # Tentar trocar todos os pares de arestas
         for i in range(1, len(best_route) - 2):
             for j in range(i + 1, len(best_route) - 1):
                 # Criar nova rota invertendo o segmento entre i e j
-                new_route = best_route[:i] + best_route[i:j+1][::-1] + best_route[j+1:]
-                
+                new_route = (
+                    best_route[:i] + best_route[i : j + 1][::-1] + best_route[j + 1 :]
+                )
+
                 # Verificar se a nova rota é melhor
                 new_distance, _ = route_distance_and_time(new_route)
-                
+
                 if new_distance < best_distance:
                     best_route = new_route
                     best_distance = new_distance
                     improved = True
                     break
-            
+
             if improved:
                 break
-    
+
     return best_route
 
 
@@ -234,51 +236,52 @@ def detect_crossing(p1, p2, p3, p4):
     """
     Detecta se duas linhas (p1-p2 e p3-p4) se cruzam.
     Usa o método de orientação geométrica.
-    
+
     Args:
         p1, p2: Pontos (lat, lon) da primeira linha
         p3, p4: Pontos (lat, lon) da segunda linha
-    
+
     Returns:
         True se as linhas se cruzam, False caso contrário
     """
+
     def ccw(A, B, C):
         """Verifica se três pontos estão em sentido anti-horário"""
         return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
-    
+
     return ccw(p1, p3, p4) != ccw(p2, p3, p4) and ccw(p1, p2, p3) != ccw(p1, p2, p4)
 
 
 def count_crossings_in_route(route):
     """
     Conta o número de cruzamentos em uma rota.
-    
+
     Args:
         route: Lista de IDs de clientes na rota
-    
+
     Returns:
         Número de cruzamentos detectados
     """
     crossings = 0
-    
+
     # Obter coordenadas de todos os pontos da rota
     coords = [(clientes[node]["lat"], clientes[node]["lon"]) for node in route]
-    
+
     # Verificar cada par de arestas
     for i in range(len(route) - 1):
         for j in range(i + 2, len(route) - 1):
             # Evitar comparar arestas adjacentes
             if j == i + 1:
                 continue
-            
+
             p1 = coords[i]
             p2 = coords[i + 1]
             p3 = coords[j]
             p4 = coords[j + 1]
-            
+
             if detect_crossing(p1, p2, p3, p4):
                 crossings += 1
-    
+
     return crossings
 
 
@@ -530,9 +533,16 @@ for algo_name, algo_func in algorithms:
         load = route_load(r)
         crossings = count_crossings_in_route(r)
         total_crossings += crossings
-        
+
         route_summary.append(
-            {"index": idx, "route": r, "dist_km": dist, "time_min": time, "load": load, "crossings": crossings}
+            {
+                "index": idx,
+                "route": r,
+                "dist_km": dist,
+                "time_min": time,
+                "load": load,
+                "crossings": crossings,
+            }
         )
         readable = " → ".join(clientes[n]["nome"] for n in r)
         print(f"\nRota {idx+1}: {readable}")
@@ -570,7 +580,7 @@ client_names = [clientes[i]["nome"] for i in ids]
 dist_matrix_df = pd.DataFrame(
     dist_km,
     columns=client_names,  # type: ignore
-    index=client_names  # type: ignore
+    index=client_names,  # type: ignore
 )
 dist_matrix_df.to_csv("output/dist_matrix.csv")
 
@@ -593,19 +603,21 @@ for i_idx, i in enumerate(ids):
             - dist_km[i_idx, j_idx]
         )
         savings_matrix[i_idx, j_idx] = saving
-        savings_list.append({
-            "Cliente_i": clientes[i]["nome"],
-            "Cliente_j": clientes[j]["nome"],
-            "Dist_Deposito_i": dist_km[depot_idx, i_idx],
-            "Dist_Deposito_j": dist_km[depot_idx, j_idx],
-            "Dist_i_j": dist_km[i_idx, j_idx],
-            "Ganho": saving
-        })
+        savings_list.append(
+            {
+                "Cliente_i": clientes[i]["nome"],
+                "Cliente_j": clientes[j]["nome"],
+                "Dist_Deposito_i": dist_km[depot_idx, i_idx],
+                "Dist_Deposito_j": dist_km[depot_idx, j_idx],
+                "Dist_i_j": dist_km[i_idx, j_idx],
+                "Ganho": saving,
+            }
+        )
 
 savings_matrix_df = pd.DataFrame(
     savings_matrix,
     columns=client_names,  # type: ignore
-    index=client_names  # type: ignore
+    index=client_names,  # type: ignore
 )
 savings_matrix_df.to_csv("output/savings_matrix.csv")
 
@@ -614,7 +626,17 @@ print("  - Hierarquia de ganhos (savings_hierarchy.csv)")
 savings_hierarchy_df = pd.DataFrame(savings_list)
 savings_hierarchy_df = savings_hierarchy_df.sort_values(by="Ganho", ascending=False)
 savings_hierarchy_df["Rank"] = range(1, len(savings_hierarchy_df) + 1)
-savings_hierarchy_df = savings_hierarchy_df[["Rank", "Cliente_i", "Cliente_j", "Dist_Deposito_i", "Dist_Deposito_j", "Dist_i_j", "Ganho"]]
+savings_hierarchy_df = savings_hierarchy_df[
+    [
+        "Rank",
+        "Cliente_i",
+        "Cliente_j",
+        "Dist_Deposito_i",
+        "Dist_Deposito_j",
+        "Dist_i_j",
+        "Ganho",
+    ]
+]
 savings_hierarchy_df.to_csv("output/savings_hierarchy.csv", index=False)
 
 print("✓ Matrizes exportadas com sucesso!")
@@ -857,77 +879,135 @@ algoritmos_names = list(all_results.keys())
 algoritmos_labels = [name.replace(" ", "\n") for name in algoritmos_names]
 distancias_totais = [all_results[name]["total_dist"] for name in algoritmos_names]
 cruzamentos_totais = [all_results[name]["total_crossings"] for name in algoritmos_names]
-cores_bar = ['#2E7D32', '#C62828', '#F57C00', '#1565C0']
+cores_bar = ["#2E7D32", "#C62828", "#F57C00", "#1565C0"]
 
 # Gráfico 1: Distância Total e Cruzamentos
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
 # Subplot 1: Distância Total
 x_pos = np.arange(len(algoritmos_labels))
-bars1 = ax1.bar(x_pos, distancias_totais, color=cores_bar, alpha=0.8, edgecolor='black', linewidth=1.5)
+bars1 = ax1.bar(
+    x_pos,
+    distancias_totais,
+    color=cores_bar,
+    alpha=0.8,
+    edgecolor="black",
+    linewidth=1.5,
+)
 
 # Adicionar valores nas barras
 for i, (bar, dist) in enumerate(zip(bars1, distancias_totais)):
     height = bar.get_height()
-    ax1.text(bar.get_x() + bar.get_width()/2., height,
-             f'{dist:.2f} km',
-             ha='center', va='bottom', fontweight='bold', fontsize=11)
-    
+    ax1.text(
+        bar.get_x() + bar.get_width() / 2.0,
+        height,
+        f"{dist:.2f} km",
+        ha="center",
+        va="bottom",
+        fontweight="bold",
+        fontsize=11,
+    )
+
     # Adicionar percentual de diferença em relação ao melhor
     min_dist = min(distancias_totais)
     if dist != min_dist:
         diff_pct = ((dist - min_dist) / min_dist) * 100
-        ax1.text(bar.get_x() + bar.get_width()/2., height * 0.5,
-                 f'+{diff_pct:.1f}%',
-                 ha='center', va='center', fontsize=9, color='white', fontweight='bold',
-                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height * 0.5,
+            f"+{diff_pct:.1f}%",
+            ha="center",
+            va="center",
+            fontsize=9,
+            color="white",
+            fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="black", alpha=0.7),
+        )
 
-ax1.set_ylabel('Distância Total (km)', fontsize=12, fontweight='bold')
-ax1.set_xlabel('Algoritmo', fontsize=12, fontweight='bold')
-ax1.set_title('Comparação de Distância Total por Algoritmo', fontsize=14, fontweight='bold', pad=15)
+ax1.set_ylabel("Distância Total (km)", fontsize=12, fontweight="bold")
+ax1.set_xlabel("Algoritmo", fontsize=12, fontweight="bold")
+ax1.set_title(
+    "Comparação de Distância Total por Algoritmo",
+    fontsize=14,
+    fontweight="bold",
+    pad=15,
+)
 ax1.set_xticks(x_pos)
 ax1.set_xticklabels(algoritmos_labels, fontsize=10)
-ax1.grid(axis='y', alpha=0.3, linestyle='--')
+ax1.grid(axis="y", alpha=0.3, linestyle="--")
 ax1.set_ylim(0, max(distancias_totais) * 1.15)
 
 # Destacar o melhor resultado
 min_idx = distancias_totais.index(min(distancias_totais))
-bars1[min_idx].set_edgecolor('gold')
+bars1[min_idx].set_edgecolor("gold")
 bars1[min_idx].set_linewidth(3)
-ax1.text(min_idx, distancias_totais[min_idx] * 1.05, '⭐ MELHOR', 
-         ha='center', fontsize=10, fontweight='bold', color='#FFD700')
+ax1.text(
+    min_idx,
+    distancias_totais[min_idx] * 1.05,
+    "⭐ MELHOR",
+    ha="center",
+    fontsize=10,
+    fontweight="bold",
+    color="#FFD700",
+)
 
 # Subplot 2: Cruzamentos
-bars2 = ax2.bar(x_pos, cruzamentos_totais, color=cores_bar, alpha=0.8, edgecolor='black', linewidth=1.5)
+bars2 = ax2.bar(
+    x_pos,
+    cruzamentos_totais,
+    color=cores_bar,
+    alpha=0.8,
+    edgecolor="black",
+    linewidth=1.5,
+)
 
 # Adicionar valores nas barras
 for i, (bar, cruz) in enumerate(zip(bars2, cruzamentos_totais)):
     height = bar.get_height()
-    ax2.text(bar.get_x() + bar.get_width()/2., height + 0.3,
-             f'{cruz}',
-             ha='center', va='bottom', fontweight='bold', fontsize=11)
+    ax2.text(
+        bar.get_x() + bar.get_width() / 2.0,
+        height + 0.3,
+        f"{cruz}",
+        ha="center",
+        va="bottom",
+        fontweight="bold",
+        fontsize=11,
+    )
 
-ax2.set_ylabel('Número de Cruzamentos', fontsize=12, fontweight='bold')
-ax2.set_xlabel('Algoritmo', fontsize=12, fontweight='bold')
-ax2.set_title('Cruzamentos Detectados por Algoritmo', fontsize=14, fontweight='bold', pad=15)
+ax2.set_ylabel("Número de Cruzamentos", fontsize=12, fontweight="bold")
+ax2.set_xlabel("Algoritmo", fontsize=12, fontweight="bold")
+ax2.set_title(
+    "Cruzamentos Detectados por Algoritmo", fontsize=14, fontweight="bold", pad=15
+)
 ax2.set_xticks(x_pos)
 ax2.set_xticklabels(algoritmos_labels, fontsize=10)
-ax2.grid(axis='y', alpha=0.3, linestyle='--')
+ax2.grid(axis="y", alpha=0.3, linestyle="--")
 ax2.set_ylim(0, max(cruzamentos_totais) * 1.2 if max(cruzamentos_totais) > 0 else 2)
 
 # Destacar o melhor resultado (menos cruzamentos)
 min_cross_idx = cruzamentos_totais.index(min(cruzamentos_totais))
-bars2[min_cross_idx].set_edgecolor('gold')
+bars2[min_cross_idx].set_edgecolor("gold")
 bars2[min_cross_idx].set_linewidth(3)
 if cruzamentos_totais[min_cross_idx] == 0:
-    ax2.text(min_cross_idx, 0.3, '✅ SEM\nCRUZAMENTOS', 
-             ha='center', fontsize=9, fontweight='bold', color='green')
+    ax2.text(
+        min_cross_idx,
+        0.3,
+        "✅ SEM\nCRUZAMENTOS",
+        ha="center",
+        fontsize=9,
+        fontweight="bold",
+        color="green",
+    )
 
-plt.suptitle('Análise Comparativa de Heurísticas de Roteirização - Brasília', 
-             fontsize=16, fontweight='bold', y=1.00)
+plt.suptitle(
+    "Análise Comparativa de Heurísticas de Roteirização - Brasília",
+    fontsize=16,
+    fontweight="bold",
+    y=1.00,
+)
 
 plt.tight_layout()
-plt.savefig('output/grafico_comparacao_barras.png', dpi=300, bbox_inches='tight')
+plt.savefig("output/grafico_comparacao_barras.png", dpi=300, bbox_inches="tight")
 print("✓ Gráfico de barras salvo: grafico_comparacao_barras.png")
 plt.close()
 
@@ -939,47 +1019,78 @@ axes = axes.flatten()
 
 for idx, (algo_name, result) in enumerate(all_results.items()):
     ax = axes[idx]
-    
+
     # Dados das rotas
     route_summary_detail = result["route_summary"]
-    rotas_nomes = [f'Rota {i+1}' for i in range(len(route_summary_detail))]
+    rotas_nomes = [f"Rota {i+1}" for i in range(len(route_summary_detail))]
     distancias_rotas = [r["dist_km"] for r in route_summary_detail]
     cargas = [r["load"] for r in route_summary_detail]
     tempos = [r["time_min"] for r in route_summary_detail]
-    
+
     # Criar gráfico de barras agrupadas
     x = np.arange(len(rotas_nomes))
     width = 0.25
-    
-    bars1 = ax.bar(x - width, distancias_rotas, width, label='Distância (km)', 
-                   color=cores_bar[idx], alpha=0.8, edgecolor='black')
-    bars2 = ax.bar(x, [c/10 for c in cargas], width, label='Carga (x100 kg)', 
-                   color='orange', alpha=0.8, edgecolor='black')
-    bars3 = ax.bar(x + width, [t/10 for t in tempos], width, label='Tempo (x10 min)', 
-                   color='purple', alpha=0.8, edgecolor='black')
-    
+
+    bars1 = ax.bar(
+        x - width,
+        distancias_rotas,
+        width,
+        label="Distância (km)",
+        color=cores_bar[idx],
+        alpha=0.8,
+        edgecolor="black",
+    )
+    bars2 = ax.bar(
+        x,
+        [c / 10 for c in cargas],
+        width,
+        label="Carga (x100 kg)",
+        color="orange",
+        alpha=0.8,
+        edgecolor="black",
+    )
+    bars3 = ax.bar(
+        x + width,
+        [t / 10 for t in tempos],
+        width,
+        label="Tempo (x10 min)",
+        color="purple",
+        alpha=0.8,
+        edgecolor="black",
+    )
+
     # Adicionar valores nas barras
     for bars in [bars1, bars2, bars3]:
         for bar in bars:
             height = bar.get_height()
             if height > 0:
-                ax.text(bar.get_x() + bar.get_width()/2., height,
-                       f'{height:.1f}',
-                       ha='center', va='bottom', fontsize=8, fontweight='bold')
-    
-    ax.set_ylabel('Valores', fontsize=10, fontweight='bold')
-    ax.set_title(f'{algo_name}\nDistância Total: {sum(distancias_rotas):.2f} km | Cruzamentos: {result["total_crossings"]}', 
-                fontsize=11, fontweight='bold')
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    height,
+                    f"{height:.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold",
+                )
+
+    ax.set_ylabel("Valores", fontsize=10, fontweight="bold")
+    ax.set_title(
+        f'{algo_name}\nDistância Total: {sum(distancias_rotas):.2f} km | Cruzamentos: {result["total_crossings"]}',
+        fontsize=11,
+        fontweight="bold",
+    )
     ax.set_xticks(x)
     ax.set_xticklabels(rotas_nomes)
-    ax.legend(fontsize=8, loc='upper right')
-    ax.grid(axis='y', alpha=0.3, linestyle='--')
+    ax.legend(fontsize=8, loc="upper right")
+    ax.grid(axis="y", alpha=0.3, linestyle="--")
 
-plt.suptitle('Análise Detalhada das Rotas por Algoritmo', 
-             fontsize=16, fontweight='bold')
+plt.suptitle(
+    "Análise Detalhada das Rotas por Algoritmo", fontsize=16, fontweight="bold"
+)
 
 plt.tight_layout()
-plt.savefig('output/analise_detalhada_rotas.png', dpi=300, bbox_inches='tight')
+plt.savefig("output/analise_detalhada_rotas.png", dpi=300, bbox_inches="tight")
 print("✓ Análise detalhada salva: analise_detalhada_rotas.png")
 plt.close()
 
@@ -1003,13 +1114,15 @@ for algo_name, result in all_results.items():
     filename = filename.replace("(", "")
     filename = filename.replace(")", "")
     filename = f"{filename}_brasilia.html"
-    
+
     # Criar mapa
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
-    
+    m = folium.Map(
+        location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap"
+    )
+
     routes_for_map = result["routes"]
     route_summary_for_map = result["route_summary"]
-    
+
     # Adicionar rotas com caminhos reais
     for r_idx, r_info in enumerate(route_summary_for_map):
         route = r_info["route"]
@@ -1110,7 +1223,15 @@ print(f"   • rotas_brasilia.png  - Imagem de alta resolução (Clarke & Wright
 print(f"\n  Mapas HTML Interativos:")
 for algo_name in all_results.keys():
     filename = algo_name.lower()
-    filename = filename.replace(" ", "_").replace("&", "e").replace("â", "a").replace("ã", "a").replace("ó", "o").replace("(", "").replace(")", "")
+    filename = (
+        filename.replace(" ", "_")
+        .replace("&", "e")
+        .replace("â", "a")
+        .replace("ã", "a")
+        .replace("ó", "o")
+        .replace("(", "")
+        .replace(")", "")
+    )
     print(f"   • {filename}_brasilia.html - {algo_name}")
 print(f"\n  Matrizes CSV:")
 print(f"   • dist_matrix.csv - Matriz de distâncias (km)")
