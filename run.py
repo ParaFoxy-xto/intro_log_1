@@ -165,8 +165,183 @@ def route_load(route):
     return sum(clientes[node]["demanda"] for node in route if node != 0)
 
 # -----------------------------
-# Heurística Clarke & Wright (melhor resultado)
+# Heurísticas de Roteirização
 # -----------------------------
+
+# 1) Nearest Neighbor (Vizinho Mais Próximo)
+def nearest_neighbor_routes():
+    """Constrói rotas sempre escolhendo o cliente mais próximo não visitado."""
+    routes = []
+    remaining = set(ids) - {0}
+    
+    while remaining:
+        route = [0]
+        current_load = 0
+        current_time = 0
+        current = 0
+        
+        while remaining:
+            best = None
+            best_dist = float('inf')
+            
+            for candidate in remaining:
+                demand = clientes[candidate]["demanda"]
+                if current_load + demand > CAPACIDADE:
+                    continue
+                
+                i_curr = id_to_index[current]
+                i_cand = id_to_index[candidate]
+                i_depot = id_to_index[0]
+                
+                time_to_cand = time_min[i_curr, i_cand]
+                time_cand_to_depot = time_min[i_cand, i_depot]
+                descarga = clientes[candidate]["descarga"]
+                
+                new_time = current_time + time_to_cand + descarga + time_cand_to_depot
+                
+                if new_time <= TEMPO_MAX_DIA_MIN:
+                    dist = dist_km[i_curr, i_cand]
+                    if dist < best_dist:
+                        best_dist = dist
+                        best = candidate
+            
+            if best is None:
+                break
+            
+            route.append(best)
+            current_load += clientes[best]["demanda"]
+            i_curr = id_to_index[current]
+            i_best = id_to_index[best]
+            current_time += time_min[i_curr, i_best] + clientes[best]["descarga"]
+            current = best
+            remaining.remove(best)
+        
+        route.append(0)
+        routes.append(route)
+    
+    return routes
+
+# 2) Farthest Neighbor (Ponto Mais Distante)
+def farthest_neighbor_routes():
+    """Começa com o cliente mais distante do depósito."""
+    routes = []
+    remaining = set(ids) - {0}
+    
+    while remaining:
+        route = [0]
+        current_load = 0
+        current_time = 0
+        
+        # Começar com o cliente mais distante do depósito
+        farthest = max(remaining, key=lambda x: dist_km[id_to_index[0], id_to_index[x]])
+        route.append(farthest)
+        current_load += clientes[farthest]["demanda"]
+        current_time += time_min[id_to_index[0], id_to_index[farthest]] + clientes[farthest]["descarga"]
+        remaining.remove(farthest)
+        
+        current = route[-1]
+        
+        while remaining:
+            best = None
+            best_dist = float('inf')
+            
+            for candidate in remaining:
+                demand = clientes[candidate]["demanda"]
+                if current_load + demand > CAPACIDADE:
+                    continue
+                
+                i_curr = id_to_index[current]
+                i_cand = id_to_index[candidate]
+                i_depot = id_to_index[0]
+                
+                time_to_cand = time_min[i_curr, i_cand]
+                time_cand_to_depot = time_min[i_cand, i_depot]
+                descarga = clientes[candidate]["descarga"]
+                
+                new_time = current_time + time_to_cand + descarga + time_cand_to_depot
+                
+                if new_time <= TEMPO_MAX_DIA_MIN:
+                    dist = dist_km[i_curr, i_cand]
+                    if dist < best_dist:
+                        best_dist = dist
+                        best = candidate
+            
+            if best is None:
+                break
+            
+            route.append(best)
+            current_load += clientes[best]["demanda"]
+            i_curr = id_to_index[current]
+            i_best = id_to_index[best]
+            current_time += time_min[i_curr, i_best] + clientes[best]["descarga"]
+            current = best
+            remaining.remove(best)
+        
+        route.append(0)
+        routes.append(route)
+    
+    return routes
+
+# 3) Sweep (Varredura por ângulo)
+def sweep_routes():
+    """Ordena clientes por ângulo e agrupa sequencialmente."""
+    depot = clientes[0]
+    angles = []
+    for i in ids:
+        if i == 0: continue
+        dx = clientes[i]["lon"] - depot["lon"]
+        dy = clientes[i]["lat"] - depot["lat"]
+        ang = math.atan2(dy, dx)
+        angles.append((i, ang))
+    angles.sort(key=lambda x: x[1])
+    
+    routes = []
+    current_route = [0]
+    current_load = 0
+    current_time = 0
+    
+    for i, ang in angles:
+        demand = clientes[i]["demanda"]
+        
+        if current_route == [0]:
+            current_route.append(i)
+            current_load += demand
+            i_depot = id_to_index[0]
+            i_curr = id_to_index[i]
+            current_time = time_min[i_depot, i_curr] + clientes[i]["descarga"] + time_min[i_curr, i_depot]
+        else:
+            last = current_route[-1]
+            i_last = id_to_index[last]
+            i_curr = id_to_index[i]
+            i_depot = id_to_index[0]
+            
+            time_to_new = time_min[i_last, i_curr]
+            time_new_to_depot = time_min[i_curr, i_depot]
+            time_old_to_depot = time_min[i_last, i_depot]
+            
+            additional_time = time_to_new + clientes[i]["descarga"] + time_new_to_depot - time_old_to_depot
+            new_time = current_time + additional_time
+            
+            if current_load + demand <= CAPACIDADE and new_time <= TEMPO_MAX_DIA_MIN:
+                current_route.append(i)
+                current_load += demand
+                current_time = new_time
+            else:
+                current_route.append(0)
+                routes.append(current_route)
+                current_route = [0, i]
+                current_load = demand
+                i_depot = id_to_index[0]
+                i_curr = id_to_index[i]
+                current_time = time_min[i_depot, i_curr] + clientes[i]["descarga"] + time_min[i_curr, i_depot]
+    
+    if len(current_route) > 1:
+        current_route.append(0)
+        routes.append(current_route)
+    
+    return routes
+
+# 4) Heurística Clarke & Wright (Savings)
 def clarke_wright_routes():
     routes = {i: [0, i, 0] for i in ids if i != 0}
     route_loads = {i: clientes[i]["demanda"] for i in ids if i != 0}
@@ -210,20 +385,55 @@ def clarke_wright_routes():
     return list(routes.values())
 
 # -----------------------------
-# Gerar rotas
+# Gerar rotas com todos os 4 algoritmos
 # -----------------------------
-print("\nGerando rotas com Clarke & Wright...")
-routes = clarke_wright_routes()
+print("\n" + "="*60)
+print("EXECUTANDO 4 HEURÍSTICAS DE ROTEIRIZAÇÃO")
+print("="*60)
 
-print(f"\n=== Solução Clarke & Wright ===")
-route_summary = []
-for idx, r in enumerate(routes):
-    dist, time = route_distance_and_time(r)
-    load = route_load(r)
-    route_summary.append({"index": idx, "route": r, "dist_km": dist, "time_min": time, "load": load})
-    readable = " → ".join(clientes[n]["nome"] for n in r)
-    print(f"\nRota {idx}: {readable}")
-    print(f"  Carga: {load} kg | Distância: {dist:.2f} km | Tempo: {time:.1f} min")
+algorithms = [
+    ("Clarke & Wright", clarke_wright_routes),
+    ("Vizinho Mais Próximo", nearest_neighbor_routes),
+    ("Ponto Mais Distante", farthest_neighbor_routes),
+    ("Varredura (Sweep)", sweep_routes)
+]
+
+all_results = {}
+
+for algo_name, algo_func in algorithms:
+    print(f"\n\nGerando rotas com {algo_name}...")
+    routes = algo_func()
+    
+    route_summary = []
+    total_dist = 0
+    total_load = 0
+    
+    for idx, r in enumerate(routes):
+        dist, time = route_distance_and_time(r)
+        load = route_load(r)
+        route_summary.append({"index": idx, "route": r, "dist_km": dist, "time_min": time, "load": load})
+        readable = " → ".join(clientes[n]["nome"] for n in r)
+        print(f"\nRota {idx+1}: {readable}")
+        print(f"  Carga: {load} kg ({load/CAPACIDADE*100:.1f}%) | Distância: {dist:.2f} km | Tempo: {time:.1f} min ({time/TEMPO_MAX_DIA_MIN*100:.1f}%)")
+        total_dist += dist
+        total_load += load
+    
+    print(f"\n--- RESUMO {algo_name.upper()} ---")
+    print(f"Número de rotas: {len(routes)}")
+    print(f"Distância total: {total_dist:.2f} km")
+    print(f"Carga total: {total_load} kg")
+    
+    all_results[algo_name] = {
+        "routes": routes,
+        "route_summary": route_summary,
+        "total_dist": total_dist,
+        "total_load": total_load,
+        "num_routes": len(routes)
+    }
+
+# Usar Clarke & Wright para visualização individual (compatibilidade com código existente)
+routes = all_results["Clarke & Wright"]["routes"]
+route_summary = all_results["Clarke & Wright"]["route_summary"]
 
 # -----------------------------
 # Visualização 1: Imagem PNG com bounding box ajustado
@@ -289,7 +499,84 @@ print("✓ Imagem salva: rotas_brasilia.png")
 plt.close()
 
 # -----------------------------
-# Visualização 2: Mapa HTML interativo
+# Visualização 2: Comparação dos 4 Algoritmos em uma única figura
+# -----------------------------
+print("\n📊 Gerando comparação dos 4 algoritmos...")
+
+# Criar figura com 2x2 subplots
+fig, axes = plt.subplots(2, 2, figsize=(20, 16))
+axes = axes.flatten()
+
+# Cores para as rotas
+route_colors = ['#FF0000', '#0000FF', '#00AA00', '#FF8800', '#8800FF', '#00FFFF']
+
+for idx, (algo_name, result) in enumerate(all_results.items()):
+    ax = axes[idx]
+    
+    # Plotar pontos de clientes
+    for i in ids:
+        lon, lat = clientes[i]["lon"], clientes[i]["lat"]
+        if i == 0:
+            ax.scatter(lon, lat, s=500, marker='*', color='red', edgecolors='black',
+                      linewidths=2, zorder=5)
+        else:
+            ax.scatter(lon, lat, s=250, marker='o', color='yellow', edgecolors='black',
+                      linewidths=2, zorder=5)
+        
+        # Labels mais compactos
+        nome_curto = clientes[i]["nome"].split('(')[0].strip()[:15]
+        ax.annotate(nome_curto, xy=(lon, lat), xytext=(3, 3),
+                   textcoords='offset points', fontsize=7, fontweight='bold',
+                   bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+    
+    # Plotar rotas
+    for r_idx, r_info in enumerate(result["route_summary"]):
+        route = r_info["route"]
+        color = route_colors[r_idx % len(route_colors)]
+        
+        # Desenhar linhas conectando os clientes
+        for a, b in zip(route[:-1], route[1:]):
+            lon_a, lat_a = clientes[a]["lon"], clientes[a]["lat"]
+            lon_b, lat_b = clientes[b]["lon"], clientes[b]["lat"]
+            ax.plot([lon_a, lon_b], [lat_a, lat_b], color=color, linewidth=2.5, 
+                   alpha=0.7, zorder=2)
+            # Adicionar setas para indicar direção
+            ax.annotate('', xy=(lon_b, lat_b), xytext=(lon_a, lat_a),
+                       arrowprops=dict(arrowstyle='->', color=color, lw=1.5, alpha=0.6))
+    
+    # Título do subplot com estatísticas
+    title = f"{algo_name}\n"
+    title += f"Rotas: {result['num_routes']} | Dist: {result['total_dist']:.1f} km"
+    ax.set_title(title, fontsize=12, fontweight='bold', pad=10)
+    
+    # Configurações do eixo
+    ax.set_xlabel('Longitude', fontsize=9)
+    ax.set_ylabel('Latitude', fontsize=9)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_aspect('equal', 'box')
+    
+    # Adicionar legenda das rotas no subplot
+    legend_elements = []
+    for r_idx, r_info in enumerate(result["route_summary"]):
+        color = route_colors[r_idx % len(route_colors)]
+        from matplotlib.lines import Line2D
+        legend_elements.append(
+            Line2D([0], [0], color=color, linewidth=2, 
+                   label=f'R{r_idx+1}: {r_info["dist_km"]:.1f}km, {r_info["load"]}kg')
+        )
+    ax.legend(handles=legend_elements, loc='lower left', fontsize=7, framealpha=0.9)
+
+# Título geral da figura
+fig.suptitle('Comparação de Heurísticas de Roteirização - Brasília', 
+             fontsize=18, fontweight='bold', y=0.995)
+
+plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.99))
+plt.savefig('output/comparacao_algoritmos.png', dpi=300, bbox_inches='tight')
+print("✓ Imagem de comparação salva: comparacao_algoritmos.png")
+plt.close()
+
+# -----------------------------
+# Visualização 3: Mapa HTML interativo
 # -----------------------------
 print("\n🗺️  Gerando mapa HTML interativo...")
 
@@ -390,10 +677,11 @@ print("\n" + "="*60)
 print("✅ CONCLUÍDO!")
 print("="*60)
 print(f"📁 Arquivos gerados:")
-print(f"   • rotas_brasilia.png  - Imagem de alta resolução")
-print(f"   • rotas_brasilia.html - Mapa interativo")
-print(f"\n📊 Resumo:")
-print(f"   • {len(routes)} rotas geradas")
-print(f"   • {sum(r['dist_km'] for r in route_summary):.1f} km totais")
-print(f"   • {sum(r['load'] for r in route_summary)} kg de carga")
+print(f"   • comparacao_algoritmos.png - Comparação dos 4 algoritmos")
+print(f"   • rotas_brasilia.png  - Imagem de alta resolução (Clarke & Wright)")
+print(f"   • rotas_brasilia.html - Mapa interativo (Clarke & Wright)")
+print(f"\n📊 Resumo da Comparação:")
+for algo_name, result in all_results.items():
+    print(f"   {algo_name}:")
+    print(f"      - Rotas: {result['num_routes']} | Dist: {result['total_dist']:.2f} km | Carga: {result['total_load']} kg")
 print("="*60)
