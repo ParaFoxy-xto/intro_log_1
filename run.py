@@ -93,7 +93,7 @@ def route_service_time_minutes(route):
 # Carregar grafo e mapear pontos
 # -----------------------------
 print("Carregando grafo de Brasília...")
-G = ox.load_graphml("brasilia.graphml")
+G = ox.load_graphml("data/brasilia.graphml")
 print(f"✓ Grafo carregado: {len(G.nodes)} nós, {len(G.edges)} arestas")
 
 # Calcular bounding box baseado nos pontos de entrega
@@ -186,6 +186,105 @@ def route_load(route):
 
 
 # -----------------------------
+# Otimização: Remoção de Cruzamentos (2-opt)
+# -----------------------------
+
+
+def remove_crossings(route):
+    """
+    Remove cruzamentos de uma rota usando o algoritmo 2-opt.
+    O 2-opt detecta quando duas arestas se cruzam e as troca para eliminar o cruzamento.
+    
+    Args:
+        route: Lista de IDs de clientes na rota (incluindo depósito no início e fim)
+    
+    Returns:
+        Rota otimizada sem cruzamentos
+    """
+    if len(route) <= 3:  # Rota muito pequena, não precisa otimizar
+        return route
+    
+    improved = True
+    best_route = route[:]
+    
+    while improved:
+        improved = False
+        best_distance, _ = route_distance_and_time(best_route)
+        
+        # Tentar trocar todos os pares de arestas
+        for i in range(1, len(best_route) - 2):
+            for j in range(i + 1, len(best_route) - 1):
+                # Criar nova rota invertendo o segmento entre i e j
+                new_route = best_route[:i] + best_route[i:j+1][::-1] + best_route[j+1:]
+                
+                # Verificar se a nova rota é melhor
+                new_distance, _ = route_distance_and_time(new_route)
+                
+                if new_distance < best_distance:
+                    best_route = new_route
+                    best_distance = new_distance
+                    improved = True
+                    break
+            
+            if improved:
+                break
+    
+    return best_route
+
+
+def detect_crossing(p1, p2, p3, p4):
+    """
+    Detecta se duas linhas (p1-p2 e p3-p4) se cruzam.
+    Usa o método de orientação geométrica.
+    
+    Args:
+        p1, p2: Pontos (lat, lon) da primeira linha
+        p3, p4: Pontos (lat, lon) da segunda linha
+    
+    Returns:
+        True se as linhas se cruzam, False caso contrário
+    """
+    def ccw(A, B, C):
+        """Verifica se três pontos estão em sentido anti-horário"""
+        return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+    
+    return ccw(p1, p3, p4) != ccw(p2, p3, p4) and ccw(p1, p2, p3) != ccw(p1, p2, p4)
+
+
+def count_crossings_in_route(route):
+    """
+    Conta o número de cruzamentos em uma rota.
+    
+    Args:
+        route: Lista de IDs de clientes na rota
+    
+    Returns:
+        Número de cruzamentos detectados
+    """
+    crossings = 0
+    
+    # Obter coordenadas de todos os pontos da rota
+    coords = [(clientes[node]["lat"], clientes[node]["lon"]) for node in route]
+    
+    # Verificar cada par de arestas
+    for i in range(len(route) - 1):
+        for j in range(i + 2, len(route) - 1):
+            # Evitar comparar arestas adjacentes
+            if j == i + 1:
+                continue
+            
+            p1 = coords[i]
+            p2 = coords[i + 1]
+            p3 = coords[j]
+            p4 = coords[j + 1]
+            
+            if detect_crossing(p1, p2, p3, p4):
+                crossings += 1
+    
+    return crossings
+
+
+# -----------------------------
 # Heurísticas de Roteirização
 # -----------------------------
 
@@ -227,6 +326,10 @@ def nearest_neighbor_routes():
             remaining.remove(best)
 
         route.append(0)
+        
+        # Aplicar otimização 2-opt para remover cruzamentos
+        route = remove_crossings(route)
+        
         routes.append(route)
 
     return routes
@@ -445,18 +548,24 @@ for algo_name, algo_func in algorithms:
     route_summary = []
     total_dist = 0
     total_load = 0
+    total_crossings = 0
 
     for idx, r in enumerate(routes):
         dist, time = route_distance_and_time(r)
         load = route_load(r)
+        crossings = count_crossings_in_route(r)
+        total_crossings += crossings
+        
         route_summary.append(
-            {"index": idx, "route": r, "dist_km": dist, "time_min": time, "load": load}
+            {"index": idx, "route": r, "dist_km": dist, "time_min": time, "load": load, "crossings": crossings}
         )
         readable = " → ".join(clientes[n]["nome"] for n in r)
         print(f"\nRota {idx+1}: {readable}")
         print(
             f"  Carga: {load} kg ({load/CAPACIDADE*100:.1f}%) | Distância: {dist:.2f} km | Tempo: {time:.1f} min ({time/TEMPO_MAX_DIA_MIN*100:.1f}%)"
         )
+        if crossings > 0:
+            print(f"  ⚠️  Cruzamentos detectados: {crossings}")
         total_dist += dist
         total_load += load
 
@@ -464,6 +573,7 @@ for algo_name, algo_func in algorithms:
     print(f"Número de rotas: {len(routes)}")
     print(f"Distância total: {total_dist:.2f} km")
     print(f"Carga total: {total_load} kg")
+    print(f"Total de cruzamentos: {total_crossings}")
 
     all_results[algo_name] = {
         "routes": routes,
@@ -471,6 +581,7 @@ for algo_name, algo_func in algorithms:
         "total_dist": total_dist,
         "total_load": total_load,
         "num_routes": len(routes),
+        "total_crossings": total_crossings,
     }
 
 # Usar Clarke & Wright para visualização individual (compatibilidade com código existente)
@@ -811,6 +922,6 @@ print(f"\n📊 Resumo da Comparação:")
 for algo_name, result in all_results.items():
     print(f"   {algo_name}:")
     print(
-        f"      - Rotas: {result['num_routes']} | Dist: {result['total_dist']:.2f} km | Carga: {result['total_load']} kg"
+        f"      - Rotas: {result['num_routes']} | Dist: {result['total_dist']:.2f} km | Carga: {result['total_load']} kg | Cruzamentos: {result['total_crossings']}"
     )
 print("=" * 60)
