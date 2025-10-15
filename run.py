@@ -5,8 +5,6 @@ Gera rotas usando o grafo real de Brasília com:
 - Bounding box ajustado aos pontos de entrega
 - Caminhos traçados nos nós reais do graphml
 - Visualização em imagem e HTML interativo
-
-Autor: Gabriel
 """
 
 import math
@@ -337,65 +335,42 @@ def nearest_neighbor_routes():
 
 # 2) Farthest Neighbor (Ponto Mais Distante)
 def farthest_neighbor_routes():
-    """Sempre escolhe o cliente mais distante do ponto atualmente mais distante já na rota e o insere na melhor posição da rota."""
+    """Sempre escolhe o cliente mais distante não visitado."""
     routes = []
     remaining = set(ids) - {0}
 
     while remaining:
-        route = [0, 0]  # Começar com depósito -> depósito
+        route = [0]
         current_load = 0
         current_time = 0
-
-        # começar no depósito
         current = 0
 
         while remaining:
-            # Encontrar o cliente mais distante do depósito
-            farthest = max(
-                remaining, key=lambda x: dist_km[id_to_index[current], id_to_index[x]]
-            )
+            # Encontrar o cliente mais distante do ponto atual
+            best = None
+            best_dist = -1  # Queremos o MAIOR
 
-            # Encontrar a melhor posição para inserir este cliente
-            best_position = 1
-            best_cost_increase = float("inf")
+            for candidate in remaining:
+                i_curr = id_to_index[current]
+                i_cand = id_to_index[candidate]
+                dist = dist_km[i_curr, i_cand]
+                
+                if dist > best_dist:
+                    best_dist = dist
+                    best = candidate
 
-            for pos in range(1, len(route)):
-                # Cliente anterior e posterior na posição de inserção
-                prev_client = route[pos - 1]
-                next_client = route[pos]
-
-                # Calcular o aumento de custo ao inserir o cliente nesta posição
-                old_cost = dist_km[id_to_index[prev_client], id_to_index[next_client]]
-                new_cost = (
-                    dist_km[id_to_index[prev_client], id_to_index[farthest]]
-                    + dist_km[id_to_index[farthest], id_to_index[next_client]]
-                )
-                cost_increase = new_cost - old_cost
-
-                if cost_increase < best_cost_increase:
-                    best_cost_increase = cost_increase
-                    best_position = pos
-
-            # Se não conseguir inserir em nenhuma posição, terminar esta rota
-            if best_cost_increase == float("inf"):
+            if best is None:
                 break
 
-            # Inserir o cliente na melhor posição
-            route.insert(best_position, farthest)
-            current_load += clientes[farthest]["demanda"]
+            route.append(best)
+            current_load += clientes[best]["demanda"]
+            i_curr = id_to_index[current]
+            i_best = id_to_index[best]
+            current_time += time_min[i_curr, i_best] + clientes[best]["descarga"]
+            current = best
+            remaining.remove(best)
 
-            # Recalcular tempo total da rota
-            # tempo de carga do depósito no início
-            current_time = clientes[0]["descarga"]
-            for i in range(len(route) - 1):
-                current_time += time_min[
-                    id_to_index[route[i]], id_to_index[route[i + 1]]
-                ]
-                if route[i] != 0:  # Adicionar tempo de descarga (exceto depósito)
-                    current_time += clientes[route[i]]["descarga"]
-
-            remaining.remove(farthest)
-
+        route.append(0)
         routes.append(route)
 
     return routes
@@ -583,6 +558,65 @@ for algo_name, algo_func in algorithms:
         "num_routes": len(routes),
         "total_crossings": total_crossings,
     }
+
+# -----------------------------
+# Exportar Matrizes para CSV
+# -----------------------------
+print("\n📄 Exportando matrizes para CSV...")
+
+# 1. Matriz de Distâncias
+print("  - Matriz de distâncias (dist_matrix.csv)")
+dist_matrix_df = pd.DataFrame(
+    dist_km,
+    columns=[clientes[i]["nome"] for i in ids],
+    index=[clientes[i]["nome"] for i in ids]
+)
+dist_matrix_df.to_csv("output/dist_matrix.csv")
+
+# 2. Matriz de Ganhos (Clarke & Wright Savings)
+print("  - Matriz de ganhos (savings_matrix.csv)")
+depot_idx = id_to_index[0]
+savings_matrix = np.zeros((n, n))
+savings_list = []
+
+for i_idx, i in enumerate(ids):
+    if i == 0:
+        continue
+    for j_idx, j in enumerate(ids):
+        if j == 0 or j == i:
+            continue
+        # Saving = dist(depot, i) + dist(depot, j) - dist(i, j)
+        saving = (
+            dist_km[depot_idx, i_idx]
+            + dist_km[depot_idx, j_idx]
+            - dist_km[i_idx, j_idx]
+        )
+        savings_matrix[i_idx, j_idx] = saving
+        savings_list.append({
+            "Cliente_i": clientes[i]["nome"],
+            "Cliente_j": clientes[j]["nome"],
+            "Dist_Deposito_i": dist_km[depot_idx, i_idx],
+            "Dist_Deposito_j": dist_km[depot_idx, j_idx],
+            "Dist_i_j": dist_km[i_idx, j_idx],
+            "Ganho": saving
+        })
+
+savings_matrix_df = pd.DataFrame(
+    savings_matrix,
+    columns=[clientes[i]["nome"] for i in ids],
+    index=[clientes[i]["nome"] for i in ids]
+)
+savings_matrix_df.to_csv("output/savings_matrix.csv")
+
+# 3. Hierarquia de Ganhos (ordenada por ganho decrescente)
+print("  - Hierarquia de ganhos (savings_hierarchy.csv)")
+savings_hierarchy_df = pd.DataFrame(savings_list)
+savings_hierarchy_df = savings_hierarchy_df.sort_values(by="Ganho", ascending=False)
+savings_hierarchy_df["Rank"] = range(1, len(savings_hierarchy_df) + 1)
+savings_hierarchy_df = savings_hierarchy_df[["Rank", "Cliente_i", "Cliente_j", "Dist_Deposito_i", "Dist_Deposito_j", "Dist_i_j", "Ganho"]]
+savings_hierarchy_df.to_csv("output/savings_hierarchy.csv", index=False)
+
+print("✓ Matrizes exportadas com sucesso!")
 
 # Usar Clarke & Wright para visualização individual (compatibilidade com código existente)
 routes = all_results["Clarke & Wright"]["routes"]
@@ -813,111 +847,274 @@ print("✓ Imagem de comparação salva: comparacao_algoritmos.png")
 plt.close()
 
 # -----------------------------
-# Visualização 3: Mapa HTML interativo
+# Visualização 2b: Gráficos de Barras Comparativos
 # -----------------------------
-print("\n🗺️  Gerando mapa HTML interativo...")
+print("\n📊 Gerando gráficos de barras comparativos...")
+
+# Preparar dados
+algoritmos_names = list(all_results.keys())
+algoritmos_labels = [name.replace(" ", "\n") for name in algoritmos_names]
+distancias_totais = [all_results[name]["total_dist"] for name in algoritmos_names]
+cruzamentos_totais = [all_results[name]["total_crossings"] for name in algoritmos_names]
+cores_bar = ['#2E7D32', '#C62828', '#F57C00', '#1565C0']
+
+# Gráfico 1: Distância Total e Cruzamentos
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+# Subplot 1: Distância Total
+x_pos = np.arange(len(algoritmos_labels))
+bars1 = ax1.bar(x_pos, distancias_totais, color=cores_bar, alpha=0.8, edgecolor='black', linewidth=1.5)
+
+# Adicionar valores nas barras
+for i, (bar, dist) in enumerate(zip(bars1, distancias_totais)):
+    height = bar.get_height()
+    ax1.text(bar.get_x() + bar.get_width()/2., height,
+             f'{dist:.2f} km',
+             ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    # Adicionar percentual de diferença em relação ao melhor
+    min_dist = min(distancias_totais)
+    if dist != min_dist:
+        diff_pct = ((dist - min_dist) / min_dist) * 100
+        ax1.text(bar.get_x() + bar.get_width()/2., height * 0.5,
+                 f'+{diff_pct:.1f}%',
+                 ha='center', va='center', fontsize=9, color='white', fontweight='bold',
+                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
+
+ax1.set_ylabel('Distância Total (km)', fontsize=12, fontweight='bold')
+ax1.set_xlabel('Algoritmo', fontsize=12, fontweight='bold')
+ax1.set_title('Comparação de Distância Total por Algoritmo', fontsize=14, fontweight='bold', pad=15)
+ax1.set_xticks(x_pos)
+ax1.set_xticklabels(algoritmos_labels, fontsize=10)
+ax1.grid(axis='y', alpha=0.3, linestyle='--')
+ax1.set_ylim(0, max(distancias_totais) * 1.15)
+
+# Destacar o melhor resultado
+min_idx = distancias_totais.index(min(distancias_totais))
+bars1[min_idx].set_edgecolor('gold')
+bars1[min_idx].set_linewidth(3)
+ax1.text(min_idx, distancias_totais[min_idx] * 1.05, '⭐ MELHOR', 
+         ha='center', fontsize=10, fontweight='bold', color='#FFD700')
+
+# Subplot 2: Cruzamentos
+bars2 = ax2.bar(x_pos, cruzamentos_totais, color=cores_bar, alpha=0.8, edgecolor='black', linewidth=1.5)
+
+# Adicionar valores nas barras
+for i, (bar, cruz) in enumerate(zip(bars2, cruzamentos_totais)):
+    height = bar.get_height()
+    ax2.text(bar.get_x() + bar.get_width()/2., height + 0.3,
+             f'{cruz}',
+             ha='center', va='bottom', fontweight='bold', fontsize=11)
+
+ax2.set_ylabel('Número de Cruzamentos', fontsize=12, fontweight='bold')
+ax2.set_xlabel('Algoritmo', fontsize=12, fontweight='bold')
+ax2.set_title('Cruzamentos Detectados por Algoritmo', fontsize=14, fontweight='bold', pad=15)
+ax2.set_xticks(x_pos)
+ax2.set_xticklabels(algoritmos_labels, fontsize=10)
+ax2.grid(axis='y', alpha=0.3, linestyle='--')
+ax2.set_ylim(0, max(cruzamentos_totais) * 1.2 if max(cruzamentos_totais) > 0 else 2)
+
+# Destacar o melhor resultado (menos cruzamentos)
+min_cross_idx = cruzamentos_totais.index(min(cruzamentos_totais))
+bars2[min_cross_idx].set_edgecolor('gold')
+bars2[min_cross_idx].set_linewidth(3)
+if cruzamentos_totais[min_cross_idx] == 0:
+    ax2.text(min_cross_idx, 0.3, '✅ SEM\nCRUZAMENTOS', 
+             ha='center', fontsize=9, fontweight='bold', color='green')
+
+plt.suptitle('Análise Comparativa de Heurísticas de Roteirização - Brasília', 
+             fontsize=16, fontweight='bold', y=1.00)
+
+plt.tight_layout()
+plt.savefig('output/grafico_comparacao_barras.png', dpi=300, bbox_inches='tight')
+print("✓ Gráfico de barras salvo: grafico_comparacao_barras.png")
+plt.close()
+
+# Gráfico 2: Análise Detalhada das Rotas
+print("  Gerando análise detalhada das rotas...")
+
+fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+axes = axes.flatten()
+
+for idx, (algo_name, result) in enumerate(all_results.items()):
+    ax = axes[idx]
+    
+    # Dados das rotas
+    route_summary_detail = result["route_summary"]
+    rotas_nomes = [f'Rota {i+1}' for i in range(len(route_summary_detail))]
+    distancias_rotas = [r["dist_km"] for r in route_summary_detail]
+    cargas = [r["load"] for r in route_summary_detail]
+    tempos = [r["time_min"] for r in route_summary_detail]
+    
+    # Criar gráfico de barras agrupadas
+    x = np.arange(len(rotas_nomes))
+    width = 0.25
+    
+    bars1 = ax.bar(x - width, distancias_rotas, width, label='Distância (km)', 
+                   color=cores_bar[idx], alpha=0.8, edgecolor='black')
+    bars2 = ax.bar(x, [c/10 for c in cargas], width, label='Carga (x100 kg)', 
+                   color='orange', alpha=0.8, edgecolor='black')
+    bars3 = ax.bar(x + width, [t/10 for t in tempos], width, label='Tempo (x10 min)', 
+                   color='purple', alpha=0.8, edgecolor='black')
+    
+    # Adicionar valores nas barras
+    for bars in [bars1, bars2, bars3]:
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{height:.1f}',
+                       ha='center', va='bottom', fontsize=8, fontweight='bold')
+    
+    ax.set_ylabel('Valores', fontsize=10, fontweight='bold')
+    ax.set_title(f'{algo_name}\nDistância Total: {sum(distancias_rotas):.2f} km | Cruzamentos: {result["total_crossings"]}', 
+                fontsize=11, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(rotas_nomes)
+    ax.legend(fontsize=8, loc='upper right')
+    ax.grid(axis='y', alpha=0.3, linestyle='--')
+
+plt.suptitle('Análise Detalhada das Rotas por Algoritmo', 
+             fontsize=16, fontweight='bold')
+
+plt.tight_layout()
+plt.savefig('output/analise_detalhada_rotas.png', dpi=300, bbox_inches='tight')
+print("✓ Análise detalhada salva: analise_detalhada_rotas.png")
+plt.close()
+
+# -----------------------------
+# Visualização 3: Mapas HTML interativos (um para cada algoritmo)
+# -----------------------------
+print("\n🗺️  Gerando mapas HTML interativos para cada algoritmo...")
 
 # Centro do mapa
 center_lat = sum(lats) / len(lats)
 center_lon = sum(lons) / len(lons)
 
-# Criar mapa
-m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
+for algo_name, result in all_results.items():
+    # Nome do arquivo (substituir espaços e caracteres especiais)
+    filename = algo_name.lower()
+    filename = filename.replace(" ", "_")
+    filename = filename.replace("&", "e")
+    filename = filename.replace("â", "a")
+    filename = filename.replace("ã", "a")
+    filename = filename.replace("ó", "o")
+    filename = filename.replace("(", "")
+    filename = filename.replace(")", "")
+    filename = f"{filename}_brasilia.html"
+    
+    # Criar mapa
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
+    
+    routes_for_map = result["routes"]
+    route_summary_for_map = result["route_summary"]
+    
+    # Adicionar rotas com caminhos reais
+    for r_idx, r_info in enumerate(route_summary_for_map):
+        route = r_info["route"]
+        color = colors[r_idx % len(colors)]
 
-# Adicionar rotas com caminhos reais
-for r_idx, r_info in enumerate(route_summary):
-    route = r_info["route"]
-    color = colors[r_idx % len(colors)]
+        # Construir caminho completo
+        full_path_coords = []
+        for a, b in zip(route[:-1], route[1:]):
+            if (a, b) in shortest_paths:
+                path_nodes = shortest_paths[(a, b)]
+                for node in path_nodes:
+                    full_path_coords.append([G.nodes[node]["y"], G.nodes[node]["x"]])
 
-    # Construir caminho completo
-    full_path_coords = []
-    for a, b in zip(route[:-1], route[1:]):
-        if (a, b) in shortest_paths:
-            path_nodes = shortest_paths[(a, b)]
-            for node in path_nodes:
-                full_path_coords.append([G.nodes[node]["y"], G.nodes[node]["x"]])
+        # Adicionar linha da rota
+        if full_path_coords:
+            folium.PolyLine(
+                full_path_coords,
+                color=color,
+                weight=4,
+                opacity=0.8,
+                popup=f"Rota {r_idx+1}: {r_info['dist_km']:.1f}km, {r_info['load']}kg",
+            ).add_to(m)
 
-    # Adicionar linha da rota
-    if full_path_coords:
-        folium.PolyLine(
-            full_path_coords,
-            color=color,
-            weight=4,
-            opacity=0.8,
-            popup=f"Rota {r_idx}: {r_info['dist_km']:.1f}km, {r_info['load']}kg",
-        ).add_to(m)
+    # Adicionar marcadores dos clientes
+    for i in ids:
+        lat, lon = clientes[i]["lat"], clientes[i]["lon"]
 
-# Adicionar marcadores dos clientes
-for i in ids:
-    lat, lon = clientes[i]["lat"], clientes[i]["lon"]
+        if i == 0:
+            folium.Marker(
+                [lat, lon],
+                popup=f"<b>{clientes[i]['nome']}</b><br>DEPÓSITO",
+                icon=folium.Icon(color="red", icon="home", prefix="fa"),
+                tooltip=clientes[i]["nome"],
+            ).add_to(m)
+        else:
+            # Determinar em qual rota está
+            route_num = None
+            for r_idx, r_info in enumerate(route_summary_for_map):
+                if i in r_info["route"]:
+                    route_num = r_idx + 1
+                    break
 
-    if i == 0:
-        folium.Marker(
-            [lat, lon],
-            popup=f"<b>{clientes[i]['nome']}</b><br>DEPÓSITO",
-            icon=folium.Icon(color="red", icon="home", prefix="fa"),
-            tooltip=clientes[i]["nome"],
-        ).add_to(m)
-    else:
-        # Determinar em qual rota está
-        route_num = None
-        for r_idx, r_info in enumerate(route_summary):
-            if i in r_info["route"]:
-                route_num = r_idx
-                break
+            folium.CircleMarker(
+                [lat, lon],
+                radius=8,
+                popup=f"<b>{clientes[i]['nome']}</b><br>Demanda: {clientes[i]['demanda']} kg<br>Rota: {route_num}",
+                color="black",
+                fillColor="yellow",
+                fillOpacity=0.9,
+                weight=2,
+                tooltip=clientes[i]["nome"],
+            ).add_to(m)
 
-        folium.CircleMarker(
-            [lat, lon],
-            radius=8,
-            popup=f"<b>{clientes[i]['nome']}</b><br>Demanda: {clientes[i]['demanda']} kg<br>Rota: {route_num}",
-            color="black",
-            fillColor="yellow",
-            fillOpacity=0.9,
-            weight=2,
-            tooltip=clientes[i]["nome"],
-        ).add_to(m)
-
-# Adicionar legenda
-legend_html = f"""
-<div style="position: fixed; 
-            top: 10px; right: 10px; width: 280px; 
-            background-color: white; border:2px solid grey; z-index:9999; 
-            font-size:14px; padding: 10px">
-<h4 style="margin-top:0">Rotas de Entrega - Brasília</h4>
-<p><b>Algoritmo:</b> Clarke & Wright</p>
-<p><b>Total de rotas:</b> {len(routes)}</p>
-<p><b>Distância total:</b> {sum(r["dist_km"] for r in route_summary):.1f} km</p>
-<p><b>Carga total:</b> {sum(r["load"] for r in route_summary)} kg</p>
-<hr>
-"""
-
-for r_idx, r_info in enumerate(route_summary):
-    color = colors[r_idx % len(colors)]
-    legend_html += f"""
-    <p style="margin:5px 0">
-        <span style="background-color:{color}; padding:2px 8px; color:white; font-weight:bold">
-            Rota {r_idx}
-        </span><br>
-        {r_info["dist_km"]:.1f} km | {r_info["load"]} kg | {r_info["time_min"]:.0f} min
-    </p>
+    # Adicionar legenda
+    legend_html = f"""
+    <div style="position: fixed; 
+                top: 10px; right: 10px; width: 300px; 
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:14px; padding: 10px">
+    <h4 style="margin-top:0">Rotas de Entrega - Brasília</h4>
+    <p><b>Algoritmo:</b> {algo_name}</p>
+    <p><b>Total de rotas:</b> {len(routes_for_map)}</p>
+    <p><b>Distância total:</b> {result['total_dist']:.1f} km</p>
+    <p><b>Carga total:</b> {result['total_load']} kg</p>
+    <p><b>Cruzamentos:</b> {result['total_crossings']}</p>
+    <hr>
     """
 
-legend_html += "</div>"
-from branca.element import Element
+    for r_idx, r_info in enumerate(route_summary_for_map):
+        color = colors[r_idx % len(colors)]
+        legend_html += f"""
+        <p style="margin:5px 0">
+            <span style="background-color:{color}; padding:2px 8px; color:white; font-weight:bold">
+                Rota {r_idx+1}
+            </span><br>
+            {r_info["dist_km"]:.1f} km | {r_info["load"]} kg | {r_info["time_min"]:.0f} min
+        </p>
+        """
 
-m.get_root().add_child(Element(legend_html))
+    legend_html += "</div>"
+    from branca.element import Element
 
-# Salvar mapa
-m.save("output/rotas_brasilia.html")
-print("✓ Mapa HTML salvo: rotas_brasilia.html")
+    m.get_root().add_child(Element(legend_html))
+
+    # Salvar mapa
+    m.save(f"output/{filename}")
+    print(f"  ✓ {filename}")
 
 print("\n" + "=" * 60)
 print("✅ CONCLUÍDO!")
 print("=" * 60)
 print(f"📁 Arquivos gerados:")
-print(f"   • comparacao_algoritmos.png - Comparação dos 4 algoritmos")
+print(f"\n  Imagens:")
+print(f"   • comparacao_algoritmos.png - Comparação visual dos 4 algoritmos")
+print(f"   • grafico_comparacao_barras.png - Gráficos de barras comparativos")
+print(f"   • analise_detalhada_rotas.png - Análise detalhada por rota")
 print(f"   • rotas_brasilia.png  - Imagem de alta resolução (Clarke & Wright)")
-print(f"   • rotas_brasilia.html - Mapa interativo (Clarke & Wright)")
+print(f"\n  Mapas HTML Interativos:")
+for algo_name in all_results.keys():
+    filename = algo_name.lower()
+    filename = filename.replace(" ", "_").replace("&", "e").replace("â", "a").replace("ã", "a").replace("ó", "o").replace("(", "").replace(")", "")
+    print(f"   • {filename}_brasilia.html - {algo_name}")
+print(f"\n  Matrizes CSV:")
+print(f"   • dist_matrix.csv - Matriz de distâncias (km)")
+print(f"   • savings_matrix.csv - Matriz de ganhos Clarke & Wright")
+print(f"   • savings_hierarchy.csv - Hierarquia de ganhos ordenada")
 print(f"\n📊 Resumo da Comparação:")
 for algo_name, result in all_results.items():
     print(f"   {algo_name}:")
