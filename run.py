@@ -246,64 +246,65 @@ def nearest_neighbor_routes():
 
 # 2) Farthest Neighbor (Ponto Mais Distante)
 def farthest_neighbor_routes():
-    """Começa com o cliente mais distante do depósito."""
+    """Sempre escolhe o cliente mais distante do ponto atualmente mais distante já na rota e o insere na melhor posição da rota."""
     routes = []
     remaining = set(ids) - {0}
 
     while remaining:
-        route = [0]
+        route = [0, 0]  # Começar com depósito -> depósito
         current_load = 0
         current_time = 0
 
-        # Começar com o cliente mais distante do depósito
-        farthest = max(remaining, key=lambda x: dist_km[id_to_index[0], id_to_index[x]])
-        route.append(farthest)
-        current_load += clientes[farthest]["demanda"]
-        current_time += (
-            time_min[id_to_index[0], id_to_index[farthest]]
-            + clientes[farthest]["descarga"]
-        )
-        remaining.remove(farthest)
-
-        current = route[-1]
+        # começar no depósito
+        current = 0
 
         while remaining:
-            best = None
-            best_dist = float("inf")
+            # Encontrar o cliente mais distante do depósito
+            farthest = max(
+                remaining, key=lambda x: dist_km[id_to_index[current], id_to_index[x]]
+            )
 
-            for candidate in remaining:
-                demand = clientes[candidate]["demanda"]
-                if current_load + demand > CAPACIDADE:
-                    continue
+            # Encontrar a melhor posição para inserir este cliente
+            best_position = 1
+            best_cost_increase = float("inf")
 
-                i_curr = id_to_index[current]
-                i_cand = id_to_index[candidate]
-                i_depot = id_to_index[0]
+            for pos in range(1, len(route)):
+                # Cliente anterior e posterior na posição de inserção
+                prev_client = route[pos - 1]
+                next_client = route[pos]
 
-                time_to_cand = time_min[i_curr, i_cand]
-                time_cand_to_depot = time_min[i_cand, i_depot]
-                descarga = clientes[candidate]["descarga"]
+                # Calcular o aumento de custo ao inserir o cliente nesta posição
+                old_cost = dist_km[id_to_index[prev_client], id_to_index[next_client]]
+                new_cost = (
+                    dist_km[id_to_index[prev_client], id_to_index[farthest]]
+                    + dist_km[id_to_index[farthest], id_to_index[next_client]]
+                )
+                cost_increase = new_cost - old_cost
 
-                new_time = current_time + time_to_cand + descarga + time_cand_to_depot
+                if cost_increase < best_cost_increase:
+                    best_cost_increase = cost_increase
+                    best_position = pos
 
-                if new_time <= TEMPO_MAX_DIA_MIN:
-                    dist = dist_km[i_curr, i_cand]
-                    if dist < best_dist:
-                        best_dist = dist
-                        best = candidate
-
-            if best is None:
+            # Se não conseguir inserir em nenhuma posição, terminar esta rota
+            if best_cost_increase == float("inf"):
                 break
 
-            route.append(best)
-            current_load += clientes[best]["demanda"]
-            i_curr = id_to_index[current]
-            i_best = id_to_index[best]
-            current_time += time_min[i_curr, i_best] + clientes[best]["descarga"]
-            current = best
-            remaining.remove(best)
+            # Inserir o cliente na melhor posição
+            route.insert(best_position, farthest)
+            current_load += clientes[farthest]["demanda"]
 
-        route.append(0)
+            # Recalcular tempo total da rota
+            # tempo de carga do depósito no início
+            current_time = clientes[0]["descarga"]
+            for i in range(len(route) - 1):
+                current_time += time_min[
+                    id_to_index[route[i]], id_to_index[route[i + 1]]
+                ]
+                if route[i] != 0:  # Adicionar tempo de descarga (exceto depósito)
+                    current_time += clientes[route[i]]["descarga"]
+
+            remaining.remove(farthest)
+
         routes.append(route)
 
     return routes
