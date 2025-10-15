@@ -207,25 +207,13 @@ def nearest_neighbor_routes():
             best_dist = float("inf")
 
             for candidate in remaining:
-                demand = clientes[candidate]["demanda"]
-                if current_load + demand > CAPACIDADE:
-                    continue
-
                 i_curr = id_to_index[current]
                 i_cand = id_to_index[candidate]
-                i_depot = id_to_index[0]
 
-                time_to_cand = time_min[i_curr, i_cand]
-                time_cand_to_depot = time_min[i_cand, i_depot]
-                descarga = clientes[candidate]["descarga"]
-
-                new_time = current_time + time_to_cand + descarga + time_cand_to_depot
-
-                if new_time <= TEMPO_MAX_DIA_MIN:
-                    dist = dist_km[i_curr, i_cand]
-                    if dist < best_dist:
-                        best_dist = dist
-                        best = candidate
+                dist = dist_km[i_curr, i_cand]
+                if dist < best_dist:
+                    best_dist = dist
+                    best = candidate
 
             if best is None:
                 break
