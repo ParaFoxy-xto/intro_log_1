@@ -566,10 +566,11 @@ print("\n📄 Exportando matrizes para CSV...")
 
 # 1. Matriz de Distâncias
 print("  - Matriz de distâncias (dist_matrix.csv)")
+client_names = [clientes[i]["nome"] for i in ids]
 dist_matrix_df = pd.DataFrame(
     dist_km,
-    columns=[clientes[i]["nome"] for i in ids],
-    index=[clientes[i]["nome"] for i in ids]
+    columns=client_names,  # type: ignore
+    index=client_names  # type: ignore
 )
 dist_matrix_df.to_csv("output/dist_matrix.csv")
 
@@ -603,8 +604,8 @@ for i_idx, i in enumerate(ids):
 
 savings_matrix_df = pd.DataFrame(
     savings_matrix,
-    columns=[clientes[i]["nome"] for i in ids],
-    index=[clientes[i]["nome"] for i in ids]
+    columns=client_names,  # type: ignore
+    index=client_names  # type: ignore
 )
 savings_matrix_df.to_csv("output/savings_matrix.csv")
 
