@@ -1388,6 +1388,9 @@ algoritmos_names = [
 ]
 algoritmos_labels = [name.replace(" ", "\n") for name in algoritmos_names]
 
+# Cores para os gráficos de barras (usar paleta consistente com as rotas)
+cores_bar = ["#FF0000", "#0000FF", "#00AA00", "#FF8800"]
+
 # Agregar totais para cada algoritmo
 distancias_totais_agg = []
 cargas_totais_agg = []
