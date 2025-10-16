@@ -1480,82 +1480,177 @@ plt.savefig("output/grafico_comparacao_barras.png", dpi=300, bbox_inches="tight"
 print("✓ Gráfico de barras salvo: grafico_comparacao_barras.png")
 plt.close()
 
-# Gráfico 2: Análise Detalhada das Rotas
-print("  Gerando análise detalhada das rotas...")
+# Gráfico 2: Análise Detalhada - Agregados por Critério
+print("  Gerando análise detalhada por critério...")
 
-fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-axes = axes.flatten()
+# Preparar dados agregados - reordenar para ter multi-rota à esquerda e rota única à direita
+algoritmos_names = [
+    "Clarke & Wright",
+    "Varredura (Sweep)",
+    "Vizinho Mais Próximo",
+    "Ponto Mais Distante",
+]
+algoritmos_labels = [name.replace(" ", "\n") for name in algoritmos_names]
 
-for idx, (algo_name, result) in enumerate(all_results.items()):
-    ax = axes[idx]
+# Agregar totais para cada algoritmo
+distancias_totais_agg = []
+cargas_totais_agg = []
+tempos_totais_agg = []
 
-    # Dados das rotas
+for algo_name in algoritmos_names:
+    result = all_results[algo_name]
     route_summary_detail = result["route_summary"]
-    rotas_nomes = [f"Rota {i+1}" for i in range(len(route_summary_detail))]
-    distancias_rotas = [r["dist_km"] for r in route_summary_detail]
-    cargas = [r["load"] for r in route_summary_detail]
-    tempos = [r["time_min"] for r in route_summary_detail]
 
-    # Criar gráfico de barras agrupadas
-    x = np.arange(len(rotas_nomes))
-    width = 0.25
+    # Somar todas as rotas
+    total_dist = sum(r["dist_km"] for r in route_summary_detail)
+    total_load = sum(r["load"] for r in route_summary_detail)
+    total_time = sum(r["time_min"] for r in route_summary_detail)
 
-    bars1 = ax.bar(
-        x - width,
-        distancias_rotas,
-        width,
-        label="Distância (km)",
-        color=cores_bar[idx],
-        alpha=0.8,
-        edgecolor="black",
-    )
-    bars2 = ax.bar(
-        x,
-        [c / 10 for c in cargas],
-        width,
-        label="Carga (x100 kg)",
-        color="orange",
-        alpha=0.8,
-        edgecolor="black",
-    )
-    bars3 = ax.bar(
-        x + width,
-        [t / 10 for t in tempos],
-        width,
-        label="Tempo (x10 min)",
-        color="purple",
-        alpha=0.8,
-        edgecolor="black",
-    )
+    distancias_totais_agg.append(total_dist)
+    cargas_totais_agg.append(total_load)
+    tempos_totais_agg.append(total_time)
 
-    # Adicionar valores nas barras
-    for bars in [bars1, bars2, bars3]:
-        for bar in bars:
-            height = bar.get_height()
-            if height > 0:
-                ax.text(
-                    bar.get_x() + bar.get_width() / 2.0,
-                    height,
-                    f"{height:.1f}",
-                    ha="center",
-                    va="bottom",
-                    fontsize=8,
-                    fontweight="bold",
-                )
+# Criar figura com 3 subplots (1 por critério)
+fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
 
-    ax.set_ylabel("Valores", fontsize=10, fontweight="bold")
-    ax.set_title(
-        f'{algo_name}\nDistância Total: {sum(distancias_rotas):.2f} km | Cruzamentos: {result["total_crossings"]}',
-        fontsize=11,
+x_pos = np.arange(len(algoritmos_labels))
+
+# Subplot 1: Distância Total
+bars1 = ax1.bar(
+    x_pos,
+    distancias_totais_agg,
+    color=cores_bar,
+    alpha=0.8,
+    edgecolor="black",
+    linewidth=1.5,
+)
+
+for bar, dist in zip(bars1, distancias_totais_agg):
+    height = bar.get_height()
+    ax1.text(
+        bar.get_x() + bar.get_width() / 2.0,
+        height,
+        f"{dist:.1f} km",
+        ha="center",
+        va="bottom",
+        fontsize=10,
         fontweight="bold",
     )
-    ax.set_xticks(x)
-    ax.set_xticklabels(rotas_nomes)
-    ax.legend(fontsize=8, loc="upper right")
-    ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+ax1.set_ylabel("Distância Total (km)", fontsize=11, fontweight="bold")
+ax1.set_xlabel("Algoritmo", fontsize=11, fontweight="bold")
+ax1.set_title("Distância Total", fontsize=12, fontweight="bold", pad=10)
+ax1.set_xticks(x_pos)
+ax1.set_xticklabels(algoritmos_labels, fontsize=9)
+ax1.grid(axis="y", alpha=0.3, linestyle="--")
+ax1.set_ylim(0, max(distancias_totais_agg) * 1.15)
+
+# Destacar melhor resultado
+min_dist_idx = distancias_totais_agg.index(min(distancias_totais_agg))
+bars1[min_dist_idx].set_edgecolor("gold")
+bars1[min_dist_idx].set_linewidth(3)
+
+# Adicionar linha de separação entre grupos (Clarke & Wright, Sweep) | (Nearest, Farthest)
+ax1.axvline(x=1.5, color="gray", linestyle="--", linewidth=2, alpha=0.7, zorder=1)
+ax1.text(
+    1.5,
+    max(distancias_totais_agg) * 1.10,
+    "Multi-Rota | Rota Única",
+    ha="center",
+    va="center",
+    fontsize=8,
+    color="gray",
+    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+)
+
+# Subplot 2: Carga Total
+bars2 = ax2.bar(
+    x_pos,
+    cargas_totais_agg,
+    color=cores_bar,
+    alpha=0.8,
+    edgecolor="black",
+    linewidth=1.5,
+)
+
+for bar, carga in zip(bars2, cargas_totais_agg):
+    height = bar.get_height()
+    ax2.text(
+        bar.get_x() + bar.get_width() / 2.0,
+        height,
+        f"{carga:.0f} kg",
+        ha="center",
+        va="bottom",
+        fontsize=10,
+        fontweight="bold",
+    )
+
+ax2.set_ylabel("Carga Total (kg)", fontsize=11, fontweight="bold")
+ax2.set_xlabel("Algoritmo", fontsize=11, fontweight="bold")
+ax2.set_title("Carga Total Transportada", fontsize=12, fontweight="bold", pad=10)
+ax2.set_xticks(x_pos)
+ax2.set_xticklabels(algoritmos_labels, fontsize=9)
+ax2.grid(axis="y", alpha=0.3, linestyle="--")
+ax2.set_ylim(0, max(cargas_totais_agg) * 1.15)
+
+# Adicionar linha de separação entre grupos
+ax2.axvline(x=1.5, color="gray", linestyle="--", linewidth=2, alpha=0.7, zorder=1)
+ax2.text(
+    1.5,
+    max(cargas_totais_agg) * 1.10,
+    "Multi-Rota | Rota Única",
+    ha="center",
+    va="center",
+    fontsize=8,
+    color="gray",
+    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+)
+
+# Subplot 3: Tempo Total
+bars3 = ax3.bar(
+    x_pos,
+    tempos_totais_agg,
+    color=cores_bar,
+    alpha=0.8,
+    edgecolor="black",
+    linewidth=1.5,
+)
+
+for bar, tempo in zip(bars3, tempos_totais_agg):
+    height = bar.get_height()
+    ax3.text(
+        bar.get_x() + bar.get_width() / 2.0,
+        height,
+        f"{tempo:.0f} min",
+        ha="center",
+        va="bottom",
+        fontsize=10,
+        fontweight="bold",
+    )
+
+ax3.set_ylabel("Tempo Total (min)", fontsize=11, fontweight="bold")
+ax3.set_xlabel("Algoritmo", fontsize=11, fontweight="bold")
+ax3.set_title("Tempo Total de Operação", fontsize=12, fontweight="bold", pad=10)
+ax3.set_xticks(x_pos)
+ax3.set_xticklabels(algoritmos_labels, fontsize=9)
+ax3.grid(axis="y", alpha=0.3, linestyle="--")
+ax3.set_ylim(0, max(tempos_totais_agg) * 1.15)
+
+# Adicionar linha de separação entre grupos
+ax3.axvline(x=1.5, color="gray", linestyle="--", linewidth=2, alpha=0.7, zorder=1)
+ax3.text(
+    1.5,
+    max(tempos_totais_agg) * 1.10,
+    "Multi-Rota | Rota Única",
+    ha="center",
+    va="center",
+    fontsize=8,
+    color="gray",
+    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+)
 
 plt.suptitle(
-    "Análise Detalhada das Rotas por Algoritmo", fontsize=16, fontweight="bold"
+    "Análise Comparativa Agregada por Critério", fontsize=16, fontweight="bold", y=1.02
 )
 
 plt.tight_layout()
