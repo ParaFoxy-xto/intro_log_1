@@ -960,6 +960,241 @@ print("✓ Imagem de comparação salva: nearest_neighbor_comparison.png")
 plt.close()
 
 # -----------------------------
+# Visualização 1.75: Comparação OSM vs Haversine para cada método
+# -----------------------------
+print("\n📊 Gerando comparações OSM vs Haversine para cada método...")
+
+# Calcular matriz de distâncias Haversine (Euclidiana em linha reta)
+print("  Calculando matriz de distâncias Haversine...")
+dist_km_haversine = np.zeros((n, n))
+for i_idx, i in enumerate(ids):
+    for j_idx, j in enumerate(ids):
+        if i == j:
+            continue
+        dist_km_haversine[i_idx, j_idx] = haversine_km(
+            clientes[i]["lat"],
+            clientes[i]["lon"],
+            clientes[j]["lat"],
+            clientes[j]["lon"],
+        )
+
+
+# Função para calcular distância total usando matriz específica
+def route_distance_with_matrix(route, distance_matrix):
+    total_km = 0.0
+    for a, b in zip(route[:-1], route[1:]):
+        i = id_to_index[a]
+        j = id_to_index[b]
+        total_km += distance_matrix[i, j]
+    return total_km
+
+
+# Gerar comparação para cada algoritmo
+for algo_name, result in all_results.items():
+    print(f"  Gerando comparação para {algo_name}...")
+
+    routes = result["routes"]
+
+    # Calcular distâncias com OSM e Haversine
+    total_osm = 0
+    total_haversine = 0
+    route_data = []
+
+    for r_idx, route in enumerate(routes):
+        dist_osm = route_distance_with_matrix(route, dist_km)
+        dist_haversine = route_distance_with_matrix(route, dist_km_haversine)
+        total_osm += dist_osm
+        total_haversine += dist_haversine
+        route_data.append(
+            {
+                "route": route,
+                "osm": dist_osm,
+                "haversine": dist_haversine,
+                "diff": dist_osm - dist_haversine,
+                "diff_pct": ((dist_osm - dist_haversine) / dist_haversine) * 100,
+            }
+        )
+
+    # Criar figura com 2 subplots lado a lado
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 9))
+
+    for ax, use_haversine, title_suffix in [
+        (ax1, False, "OSM (Infraestrutura Real)"),
+        (ax2, True, "Haversine (Linha Reta)"),
+    ]:
+        # Plotar pontos de clientes
+        for i in ids:
+            lon, lat = clientes[i]["lon"], clientes[i]["lat"]
+            if i == 0:
+                ax.scatter(
+                    lon,
+                    lat,
+                    s=500,
+                    marker="*",
+                    color="red",
+                    edgecolors="black",
+                    linewidths=2,
+                    zorder=5,
+                )
+            else:
+                ax.scatter(
+                    lon,
+                    lat,
+                    s=250,
+                    marker="o",
+                    color="yellow",
+                    edgecolors="black",
+                    linewidths=2,
+                    zorder=5,
+                )
+
+            # Labels compactos
+            nome_curto = clientes[i]["nome"].split("(")[0].strip()[:15]
+            ax.annotate(
+                nome_curto,
+                xy=(lon, lat),
+                xytext=(3, 3),
+                textcoords="offset points",
+                fontsize=7,
+                fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7),
+            )
+
+        # Plotar rotas
+        route_colors = [
+            "#FF0000",
+            "#0000FF",
+            "#00AA00",
+            "#FF8800",
+            "#8800FF",
+            "#00FFFF",
+        ]
+        for r_idx, rd in enumerate(route_data):
+            route = rd["route"]
+            color = route_colors[r_idx % len(route_colors)]
+
+            # Desenhar linhas
+            for a, b in zip(route[:-1], route[1:]):
+                if not use_haversine:
+                    # OSM: Traçar caminho real usando os nós do grafo
+                    if (a, b) in shortest_paths:
+                        path_nodes = shortest_paths[(a, b)]
+                        xs = [G.nodes[node]["x"] for node in path_nodes]
+                        ys = [G.nodes[node]["y"] for node in path_nodes]
+                        ax.plot(
+                            xs,
+                            ys,
+                            color=color,
+                            linewidth=2.5,
+                            alpha=0.7,
+                            zorder=2,
+                            linestyle="-",
+                        )
+                    else:
+                        # Fallback para linha reta se não houver caminho
+                        lon_a, lat_a = clientes[a]["lon"], clientes[a]["lat"]
+                        lon_b, lat_b = clientes[b]["lon"], clientes[b]["lat"]
+                        ax.plot(
+                            [lon_a, lon_b],
+                            [lat_a, lat_b],
+                            color=color,
+                            linewidth=2.5,
+                            alpha=0.7,
+                            zorder=2,
+                            linestyle="-",
+                        )
+                else:
+                    # Haversine: Linha reta tracejada com setas
+                    lon_a, lat_a = clientes[a]["lon"], clientes[a]["lat"]
+                    lon_b, lat_b = clientes[b]["lon"], clientes[b]["lat"]
+                    ax.plot(
+                        [lon_a, lon_b],
+                        [lat_a, lat_b],
+                        color=color,
+                        linewidth=2.5,
+                        alpha=0.7,
+                        zorder=2,
+                        linestyle="--",
+                    )
+
+                    # Adicionar setas apenas no lado Haversine
+                    ax.annotate(
+                        "",
+                        xy=(lon_b, lat_b),
+                        xytext=(lon_a, lat_a),
+                        arrowprops=dict(
+                            arrowstyle="->", color=color, lw=1.5, alpha=0.6
+                        ),
+                    )
+
+        # Calcular distância total apropriada
+        total_dist = total_haversine if use_haversine else total_osm
+
+        # Título do subplot
+        ax.set_title(
+            f"{title_suffix}\nDistância Total: {total_dist:.2f} km",
+            fontsize=12,
+            fontweight="bold",
+            pad=10,
+        )
+        ax.set_xlabel("Longitude", fontsize=9)
+        ax.set_ylabel("Latitude", fontsize=9)
+        ax.grid(True, alpha=0.3, linestyle="--")
+        ax.set_aspect("equal", "box")
+
+        # Legenda com distâncias por rota
+        legend_elements = []
+        for r_idx, rd in enumerate(route_data):
+            color = route_colors[r_idx % len(route_colors)]
+            dist = rd["haversine"] if use_haversine else rd["osm"]
+            from matplotlib.lines import Line2D
+
+            legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color=color,
+                    linewidth=2,
+                    label=f"Rota {r_idx+1}: {dist:.2f} km",
+                )
+            )
+        ax.legend(handles=legend_elements, loc="lower left", fontsize=7, framealpha=0.9)
+
+    # Calcular diferença média
+    avg_diff_pct = ((total_osm - total_haversine) / total_haversine) * 100
+
+    # Título geral com estatísticas
+    fig.suptitle(
+        f"{algo_name}: OSM vs Haversine\n"
+        f"OSM: {total_osm:.2f} km | Haversine: {total_haversine:.2f} km | "
+        f"Diferença: +{total_osm - total_haversine:.2f} km ({avg_diff_pct:.1f}%)",
+        fontsize=16,
+        fontweight="bold",
+        y=0.98,
+    )
+
+    plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+
+    # Salvar com nome seguro do arquivo
+    filename = algo_name.lower()
+    filename = (
+        filename.replace(" ", "_")
+        .replace("&", "e")
+        .replace("â", "a")
+        .replace("ã", "a")
+        .replace("ó", "o")
+        .replace("í", "i")
+        .replace("(", "")
+        .replace(")", "")
+    )
+    output_file = f"output/osm_vs_haversine_{filename}.png"
+    plt.savefig(output_file, dpi=300, bbox_inches="tight")
+    print(f"  ✓ {output_file}")
+    plt.close()
+
+print("✓ Todas as comparações OSM vs Haversine geradas!")
+
+# -----------------------------
 # Visualização 2: Comparação dos 4 Algoritmos em uma única figura
 # -----------------------------
 print("\n📊 Gerando comparação dos 4 algoritmos...")
@@ -1430,6 +1665,20 @@ print(f"   • nearest_neighbor_comparison.png - Antes/Depois da otimização 2-
 print(f"   • grafico_comparacao_barras.png - Gráficos de barras comparativos")
 print(f"   • analise_detalhada_rotas.png - Análise detalhada por rota")
 print(f"   • rotas_brasilia.png  - Imagem de alta resolução (Clarke & Wright)")
+print(f"\n  Comparações OSM vs Haversine (por algoritmo):")
+for algo_name in all_results.keys():
+    filename = algo_name.lower()
+    filename = (
+        filename.replace(" ", "_")
+        .replace("&", "e")
+        .replace("â", "a")
+        .replace("ã", "a")
+        .replace("ó", "o")
+        .replace("í", "i")
+        .replace("(", "")
+        .replace(")", "")
+    )
+    print(f"   • osm_vs_haversine_{filename}.png")
 print(f"\n  Mapas HTML Interativos:")
 for algo_name in all_results.keys():
     filename = algo_name.lower()
