@@ -9,12 +9,13 @@ Gera rotas usando o grafo real de Brasília com:
 
 import math
 import os
-import pandas as pd
-import numpy as np
+
+import folium
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
 import osmnx as ox
-import folium
+import pandas as pd
 from folium import plugins
 
 # -----------------------------
@@ -197,7 +198,7 @@ def remove_crossings(route):
         route: Lista de IDs de clientes na rota (incluindo depósito no início e fim)
 
     Returns:
-        Rota otimizada sem cruzamentos
+        Rota otimizada sem cruzamentos (ou rota original se nenhuma melhoria for encontrada)
     """
     if len(route) <= 3:  # Rota muito pequena, não precisa otimizar
         return route
@@ -207,22 +208,34 @@ def remove_crossings(route):
 
     while improved:
         improved = False
-        best_distance, _ = route_distance_and_time(best_route)
 
         # Tentar trocar todos os pares de arestas
         for i in range(1, len(best_route) - 2):
-            for j in range(i + 1, len(best_route) - 1):
-                # Criar nova rota invertendo o segmento entre i e j
-                new_route = (
-                    best_route[:i] + best_route[i : j + 1][::-1] + best_route[j + 1 :]
+            for j in range(
+                i + 2, len(best_route)
+            ):  # FIX: i+2 em vez de i+1, e len() em vez de len()-1
+                # Calcular delta de distância (mais eficiente que recalcular tudo)
+                # Arestas antigas: (i-1, i) e (j-1, j)
+                # Arestas novas: (i-1, j-1) e (i, j)
+                idx_prev = id_to_index[best_route[i - 1]]
+                idx_i = id_to_index[best_route[i]]
+                idx_j_prev = id_to_index[best_route[j - 1]]
+                idx_j = (
+                    id_to_index[best_route[j]]
+                    if j < len(best_route)
+                    else id_to_index[best_route[-1]]
                 )
 
-                # Verificar se a nova rota é melhor
-                new_distance, _ = route_distance_and_time(new_route)
+                # Distâncias antigas
+                old_dist = dist_km[idx_prev, idx_i] + dist_km[idx_j_prev, idx_j]
 
-                if new_distance < best_distance:
-                    best_route = new_route
-                    best_distance = new_distance
+                # Distâncias novas após o 2-opt
+                new_dist = dist_km[idx_prev, idx_j_prev] + dist_km[idx_i, idx_j]
+
+                # Se houver melhoria, aplicar o 2-opt
+                if new_dist < old_dist:
+                    # Criar nova rota invertendo o segmento entre i e j-1
+                    best_route = best_route[:i] + best_route[i:j][::-1] + best_route[j:]
                     improved = True
                     break
 
@@ -328,8 +341,8 @@ def nearest_neighbor_routes():
 
         route.append(0)
 
-        # # Aplicar otimização 2-opt para remover cruzamentos
-        # route = remove_crossings(route)
+        # Aplicar otimização 2-opt para remover cruzamentos
+        route = remove_crossings(route)
 
         routes.append(route)
 
@@ -771,6 +784,174 @@ ax.legend(loc="upper left", fontsize=10)
 plt.tight_layout()
 plt.savefig("output/rotas_brasilia.png", dpi=300, bbox_inches="tight")
 print("✓ Imagem salva: rotas_brasilia.png")
+plt.close()
+
+# -----------------------------
+# Visualização 1.5: Comparação Nearest Neighbor Antes/Depois da Otimização 2-opt
+# -----------------------------
+print("\n📊 Gerando comparação Nearest Neighbor (antes/depois 2-opt)...")
+
+
+# Gerar rotas do Nearest Neighbor SEM otimização
+def nearest_neighbor_routes_no_opt():
+    """Versão sem otimização 2-opt para comparação."""
+    routes = []
+    remaining = set(ids) - {0}
+
+    while remaining:
+        route = [0]
+        current_load = 0
+        current_time = 0
+        current = 0
+
+        while remaining:
+            best = None
+            best_dist = float("inf")
+
+            for candidate in remaining:
+                i_curr = id_to_index[current]
+                i_cand = id_to_index[candidate]
+
+                dist = dist_km[i_curr, i_cand]
+                if dist < best_dist:
+                    best_dist = dist
+                    best = candidate
+
+            if best is None:
+                break
+
+            route.append(best)
+            current_load += clientes[best]["demanda"]
+            i_curr = id_to_index[current]
+            i_best = id_to_index[best]
+            current_time += time_min[i_curr, i_best] + clientes[best]["descarga"]
+            current = best
+            remaining.remove(best)
+
+        route.append(0)
+        routes.append(route)
+
+    return routes
+
+
+# Obter rotas antes e depois
+nn_routes_before = nearest_neighbor_routes_no_opt()
+nn_routes_after = all_results["Vizinho Mais Próximo"]["routes"]
+
+
+# Calcular métricas
+def calc_total_metrics(routes_list):
+    total_dist = 0
+    total_time = 0
+    for r in routes_list:
+        dist, time = route_distance_and_time(r)
+        total_dist += dist
+        total_time += time
+    return total_dist, total_time
+
+
+dist_before, time_before = calc_total_metrics(nn_routes_before)
+dist_after, time_after = calc_total_metrics(nn_routes_after)
+
+improvement_dist = ((dist_before - dist_after) / dist_before) * 100
+improvement_time = ((time_before - time_after) / time_before) * 100
+
+# Criar figura com 2 subplots lado a lado
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 9))
+
+for idx, (ax, routes_list, title, dist, time_val) in enumerate(
+    [
+        (ax1, nn_routes_before, "Antes da Otimização 2-opt", dist_before, time_before),
+        (ax2, nn_routes_after, "Depois da Otimização 2-opt", dist_after, time_after),
+    ]
+):
+    # Plotar pontos de clientes
+    for i in ids:
+        lon, lat = clientes[i]["lon"], clientes[i]["lat"]
+        if i == 0:
+            ax.scatter(
+                lon,
+                lat,
+                s=500,
+                marker="*",
+                color="red",
+                edgecolors="black",
+                linewidths=2,
+                zorder=5,
+            )
+        else:
+            ax.scatter(
+                lon,
+                lat,
+                s=250,
+                marker="o",
+                color="yellow",
+                edgecolors="black",
+                linewidths=2,
+                zorder=5,
+            )
+
+        # Labels compactos
+        nome_curto = clientes[i]["nome"].split("(")[0].strip()[:15]
+        ax.annotate(
+            nome_curto,
+            xy=(lon, lat),
+            xytext=(3, 3),
+            textcoords="offset points",
+            fontsize=7,
+            fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7),
+        )
+
+    # Plotar rotas
+    route_colors = ["#FF0000", "#0000FF", "#00AA00", "#FF8800", "#8800FF", "#00FFFF"]
+    for r_idx, route in enumerate(routes_list):
+        color = route_colors[r_idx % len(route_colors)]
+
+        # Desenhar linhas conectando os clientes
+        for a, b in zip(route[:-1], route[1:]):
+            lon_a, lat_a = clientes[a]["lon"], clientes[a]["lat"]
+            lon_b, lat_b = clientes[b]["lon"], clientes[b]["lat"]
+            ax.plot(
+                [lon_a, lon_b],
+                [lat_a, lat_b],
+                color=color,
+                linewidth=2.5,
+                alpha=0.7,
+                zorder=2,
+            )
+            # Adicionar setas para indicar direção
+            ax.annotate(
+                "",
+                xy=(lon_b, lat_b),
+                xytext=(lon_a, lat_a),
+                arrowprops=dict(arrowstyle="->", color=color, lw=1.5, alpha=0.6),
+            )
+
+    # Título e métricas
+    ax.set_title(
+        f"{title}\nDistância: {dist:.2f} km | Tempo: {time_val:.1f} min | {len(routes_list)} rotas",
+        fontsize=12,
+        fontweight="bold",
+        pad=10,
+    )
+    ax.set_xlabel("Longitude", fontsize=9)
+    ax.set_ylabel("Latitude", fontsize=9)
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.set_aspect("equal", "box")
+
+# Título geral com estatísticas de melhoria
+fig.suptitle(
+    f"Nearest Neighbor: Impacto da Otimização 2-opt\n"
+    f"Melhoria: {improvement_dist:.1f}% em distância | {improvement_time:.1f}% em tempo",
+    fontsize=16,
+    fontweight="bold",
+    y=0.98,
+)
+
+plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+plt.savefig("output/nearest_neighbor_comparison.png", dpi=300, bbox_inches="tight")
+print("✓ Imagem de comparação salva: nearest_neighbor_comparison.png")
 plt.close()
 
 # -----------------------------
