@@ -209,38 +209,63 @@ def remove_crossings(route):
     while improved:
         improved = False
 
-        # Tentar trocar todos os pares de arestas
-        for i in range(1, len(best_route) - 2):
-            for j in range(
-                i + 2, len(best_route)
-            ):  # FIX: i+2 em vez de i+1, e len() em vez de len()-1
-                # Calcular delta de distância (mais eficiente que recalcular tudo)
-                # Arestas antigas: (i-1, i) e (j-1, j)
-                # Arestas novas: (i-1, j-1) e (i, j)
-                idx_prev = id_to_index[best_route[i - 1]]
-                idx_i = id_to_index[best_route[i]]
-                idx_j_prev = id_to_index[best_route[j - 1]]
-                idx_j = (
-                    id_to_index[best_route[j]]
-                    if j < len(best_route)
-                    else id_to_index[best_route[-1]]
+        # Obter coordenadas de todos os pontos da rota
+        coords = [(clientes[node]["lat"], clientes[node]["lon"]) for node in best_route]
+
+        # Detectar pares de arestas que se cruzam
+        crossings = []
+        for i in range(len(best_route) - 1):
+            for j in range(i + 2, len(best_route) - 1):
+                # Evitar comparar arestas adjacentes
+                if j == i + 1:
+                    continue
+
+                p1 = coords[i]
+                p2 = coords[i + 1]
+                p3 = coords[j]
+                p4 = coords[j + 1]
+
+                if detect_crossing(p1, p2, p3, p4):
+                    crossings.append((i, j))
+
+        # Se não há cruzamentos, terminar
+        if not crossings:
+            break
+
+        # Para cada cruzamento detectado, tentar aplicar 2-opt
+        for i, j in crossings:
+            # Verificar se os índices ainda são válidos para a rota atual
+            if i >= len(best_route) - 1 or j >= len(best_route):
+                continue
+
+            # Calcular delta de distância
+            # Arestas antigas: (i, i+1) e (j, j+1)
+            # Arestas novas após 2-opt: (i, j) e (i+1, j+1)
+            idx_i = id_to_index[best_route[i]]
+            idx_i_next = id_to_index[best_route[i + 1]]
+            idx_j = id_to_index[best_route[j]]
+            idx_j_next = (
+                id_to_index[best_route[j + 1]]
+                if j + 1 < len(best_route)
+                else id_to_index[best_route[-1]]
+            )
+
+            # Distâncias antigas (das arestas que se cruzam)
+            old_dist = dist_km[idx_i, idx_i_next] + dist_km[idx_j, idx_j_next]
+
+            # Distâncias novas após o 2-opt (reversão do segmento entre i+1 e j)
+            new_dist = dist_km[idx_i, idx_j] + dist_km[idx_i_next, idx_j_next]
+
+            # Se houver melhoria, aplicar o 2-opt
+            if new_dist < old_dist:
+                # Inverter o segmento entre i+1 e j (inclusive)
+                best_route = (
+                    best_route[: i + 1]
+                    + best_route[i + 1 : j + 1][::-1]
+                    + best_route[j + 1 :]
                 )
-
-                # Distâncias antigas
-                old_dist = dist_km[idx_prev, idx_i] + dist_km[idx_j_prev, idx_j]
-
-                # Distâncias novas após o 2-opt
-                new_dist = dist_km[idx_prev, idx_j_prev] + dist_km[idx_i, idx_j]
-
-                # Se houver melhoria, aplicar o 2-opt
-                if new_dist < old_dist:
-                    # Criar nova rota invertendo o segmento entre i e j-1
-                    best_route = best_route[:i] + best_route[i:j][::-1] + best_route[j:]
-                    improved = True
-                    break
-
-            if improved:
-                break
+                improved = True
+                break  # Recomeçar a detecção após uma mudança
 
     return best_route
 
