@@ -732,15 +732,21 @@ print(f"Subgrafo: {len(G_bbox.nodes)} nós, {len(G_bbox.edges)} arestas")
 if not isinstance(G_bbox, (nx.MultiGraph, nx.MultiDiGraph)):
     G_bbox = nx.MultiDiGraph(G_bbox)
 
-fig, ax = ox.plot_graph(
+# Create figure with white background BEFORE osmnx plots on it
+fig, ax = plt.subplots(figsize=(16, 12))
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
+
+# Now use ox.plot_graph to draw on our pre-created axes
+ox.plot_graph(
     G_bbox,
+    ax=ax,
     node_size=0,
     edge_color="#CCCCCC",
     edge_linewidth=0.5,
     bgcolor="white",
     show=False,
     close=False,
-    figsize=(16, 12),
 )
 
 # Cores para as rotas
@@ -808,11 +814,30 @@ ax.set_title(
     "Rotas de Entrega - Brasília (Clarke & Wright)\nCaminhos Reais sobre Rede Viária OSM",
     fontsize=16,
     fontweight="bold",
+    pad=20,
 )
 ax.legend(loc="upper left", fontsize=10)
 
-plt.tight_layout()
-plt.savefig("output/rotas_brasilia.png", dpi=300, bbox_inches="tight")
+# Force white background for figure and axes to avoid transparency when saving
+# OSMnx may set transparent properties, so we need to override them explicitly
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
+# Also set the axes patch to white
+ax.patch.set_facecolor("white")
+
+plt.tight_layout(pad=2.0)
+# Pass transparent=False explicitly to prevent any transparency
+# Note: bbox_inches='tight' can sometimes cause transparency issues
+plt.savefig(
+    "output/rotas_brasilia.png",
+    dpi=300,
+    bbox_inches="tight",
+    pad_inches=0.2,
+    facecolor="white",
+    edgecolor="white",
+    transparent=False,
+    format="png",
+)
 print("✓ Imagem salva: rotas_brasilia.png")
 plt.close()
 
