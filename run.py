@@ -618,6 +618,7 @@ dist_matrix_df = pd.DataFrame(
     columns=client_names,  # type: ignore
     index=client_names,  # type: ignore
 )
+dist_matrix_df = dist_matrix_df.round(2)
 dist_matrix_df.to_csv("output/dist_matrix.csv")
 
 # 2. Matriz de Ganhos (Clarke & Wright Savings)
@@ -655,6 +656,7 @@ savings_matrix_df = pd.DataFrame(
     columns=client_names,  # type: ignore
     index=client_names,  # type: ignore
 )
+savings_matrix_df = savings_matrix_df.round(2)
 savings_matrix_df.to_csv("output/savings_matrix.csv")
 
 # 3. Hierarquia de Ganhos (ordenada por ganho decrescente)
@@ -673,6 +675,9 @@ savings_hierarchy_df = savings_hierarchy_df[
         "Ganho",
     ]
 ]
+# Round numeric columns to 2 decimal places
+numeric_cols = ["Dist_Deposito_i", "Dist_Deposito_j", "Dist_i_j", "Ganho"]
+savings_hierarchy_df[numeric_cols] = savings_hierarchy_df[numeric_cols].round(2)
 savings_hierarchy_df.to_csv("output/savings_hierarchy.csv", index=False)
 
 print("✓ Matrizes exportadas com sucesso!")
@@ -1421,6 +1426,7 @@ print("=" * 60)
 print(f"📁 Arquivos gerados:")
 print(f"\n  Imagens:")
 print(f"   • comparacao_algoritmos.png - Comparação visual dos 4 algoritmos")
+print(f"   • nearest_neighbor_comparison.png - Antes/Depois da otimização 2-opt")
 print(f"   • grafico_comparacao_barras.png - Gráficos de barras comparativos")
 print(f"   • analise_detalhada_rotas.png - Análise detalhada por rota")
 print(f"   • rotas_brasilia.png  - Imagem de alta resolução (Clarke & Wright)")
