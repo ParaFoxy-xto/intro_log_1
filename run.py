@@ -191,8 +191,8 @@ def route_load(route):
 
 def remove_crossings(route):
     """
-    Remove cruzamentos de uma rota usando o algoritmo 2-opt.
-    O 2-opt detecta quando duas arestas se cruzam e as troca para eliminar o cruzamento.
+    Remove cruzamentos de uma rota usando o algoritmo 2-opt focado em overlaps.
+    Detecta primeiro quais arestas se cruzam e só então aplica o 2-opt nesses segmentos específicos.
 
     Args:
         route: Lista de IDs de clientes na rota (incluindo depósito no início e fim)
