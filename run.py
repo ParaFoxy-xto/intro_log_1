@@ -98,7 +98,7 @@ print(f"✓ Grafo carregado: {len(G.nodes)} nós, {len(G.edges)} arestas")
 # Calcular bounding box baseado nos pontos de entrega
 lats = [clientes[i]["lat"] for i in ids]
 lons = [clientes[i]["lon"] for i in ids]
-margin = 0.01  # margem pequena
+margin = 0.02  # margem pequena
 bbox = {
     "north": max(lats) + margin,
     "south": min(lats) - margin,
@@ -1042,6 +1042,18 @@ for algo_name, result in all_results.items():
 
     # Criar figura com 2 subplots lado a lado
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 9))
+
+    # Plotar infraestrutura de fundo apenas no subplot OSM (esquerda)
+    ox.plot_graph(
+        G_bbox,
+        ax=ax1,
+        node_size=0,
+        edge_color="#CCCCCC",
+        edge_linewidth=0.5,
+        bgcolor="white",
+        show=False,
+        close=False,
+    )
 
     for ax, use_haversine, title_suffix in [
         (ax1, False, "OSM (Infraestrutura Real)"),
