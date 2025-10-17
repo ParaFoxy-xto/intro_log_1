@@ -787,8 +787,8 @@ for i in ids:
         ax.scatter(
             lon,
             lat,
-            s=400,
-            marker="*",
+            s=250,
+            marker="^",
             color="red",
             edgecolors="black",
             linewidths=2,
@@ -948,8 +948,8 @@ for idx, (ax, routes_list, title, dist, time_val) in enumerate(
             ax.scatter(
                 lon,
                 lat,
-                s=500,
-                marker="*",
+                s=250,
+                marker="^",
                 color="red",
                 edgecolors="black",
                 linewidths=2,
@@ -959,7 +959,7 @@ for idx, (ax, routes_list, title, dist, time_val) in enumerate(
             ax.scatter(
                 lon,
                 lat,
-                s=250,
+                s=100,
                 marker="o",
                 color="yellow",
                 edgecolors="black",
@@ -1127,8 +1127,8 @@ for algo_name, result in all_results.items():
                 ax.scatter(
                     lon,
                     lat,
-                    s=500,
-                    marker="*",
+                    s=250,
+                    marker="^",
                     color="red",
                     edgecolors="black",
                     linewidths=2,
@@ -1138,7 +1138,7 @@ for algo_name, result in all_results.items():
                 ax.scatter(
                     lon,
                     lat,
-                    s=250,
+                    s=100,
                     marker="o",
                     color="yellow",
                     edgecolors="black",
@@ -1329,8 +1329,8 @@ for idx, (algo_name, result) in enumerate(all_results.items()):
             ax.scatter(
                 lon,
                 lat,
-                s=500,
-                marker="*",
+                s=250,
+                marker="^",
                 color="red",
                 edgecolors="black",
                 linewidths=2,
@@ -1340,7 +1340,7 @@ for idx, (algo_name, result) in enumerate(all_results.items()):
             ax.scatter(
                 lon,
                 lat,
-                s=250,
+                s=100,
                 marker="o",
                 color="yellow",
                 edgecolors="black",
