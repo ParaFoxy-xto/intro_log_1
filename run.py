@@ -773,6 +773,13 @@ for r_idx, r_info in enumerate(route_summary):
                 label=f"Rota {r_idx}" if a == route[0] and b == route[1] else "",
             )
 
+# Criar mapeamento de cliente para (route_idx, posição)
+client_to_route_position = {}
+for r_idx, r_info in enumerate(route_summary):
+    route = r_info["route"]
+    for pos, client_id in enumerate(route):
+        client_to_route_position[client_id] = (r_idx, pos)
+
 # Plotar pontos de clientes
 for i in ids:
     lon, lat = clientes[i]["lon"], clientes[i]["lat"]
@@ -799,9 +806,17 @@ for i in ids:
             linewidths=2,
             zorder=5,
         )
-    # Label
+    # Label com número de sequência (depot sempre [0])
+    if i == 0:
+        label_text = f"{clientes[i]['nome']}\n[0]"
+    elif i in client_to_route_position:
+        _, pos = client_to_route_position[i]
+        label_text = f"{clientes[i]['nome']}\n[{pos}]"
+    else:
+        label_text = clientes[i]["nome"]
+
     ax.annotate(
-        clientes[i]["nome"],
+        label_text,
         xy=(lon, lat),
         xytext=(5, 5),
         textcoords="offset points",
@@ -920,6 +935,12 @@ for idx, (ax, routes_list, title, dist, time_val) in enumerate(
         (ax2, nn_routes_after, "Depois da Otimização 2-opt", dist_after, time_after),
     ]
 ):
+    # Criar mapeamento de cliente para (route_idx, posição)
+    client_to_route_position = {}
+    for r_idx, route in enumerate(routes_list):
+        for pos, client_id in enumerate(route):
+            client_to_route_position[client_id] = (r_idx, pos)
+
     # Plotar pontos de clientes
     for i in ids:
         lon, lat = clientes[i]["lon"], clientes[i]["lat"]
@@ -946,10 +967,18 @@ for idx, (ax, routes_list, title, dist, time_val) in enumerate(
                 zorder=5,
             )
 
-        # Labels compactos
+        # Labels compactos com número de sequência (depot sempre [0])
         nome_curto = clientes[i]["nome"].split("(")[0].strip()[:15]
+        if i == 0:
+            label_text = f"{nome_curto}\n[0]"
+        elif i in client_to_route_position:
+            _, pos = client_to_route_position[i]
+            label_text = f"{nome_curto}\n[{pos}]"
+        else:
+            label_text = nome_curto
+
         ax.annotate(
-            nome_curto,
+            label_text,
             xy=(lon, lat),
             xytext=(3, 3),
             textcoords="offset points",
@@ -1084,6 +1113,13 @@ for algo_name, result in all_results.items():
         (ax1, False, "OSM (Infraestrutura Real)"),
         (ax2, True, "Haversine (Linha Reta)"),
     ]:
+        # Criar mapeamento de cliente para (route_idx, posição)
+        client_to_route_position = {}
+        for r_idx, rd in enumerate(route_data):
+            route = rd["route"]
+            for pos, client_id in enumerate(route):
+                client_to_route_position[client_id] = (r_idx, pos)
+
         # Plotar pontos de clientes
         for i in ids:
             lon, lat = clientes[i]["lon"], clientes[i]["lat"]
@@ -1110,10 +1146,18 @@ for algo_name, result in all_results.items():
                     zorder=5,
                 )
 
-            # Labels compactos
+            # Labels compactos com número de sequência (depot sempre [0])
             nome_curto = clientes[i]["nome"].split("(")[0].strip()[:15]
+            if i == 0:
+                label_text = f"{nome_curto}\n[0]"
+            elif i in client_to_route_position:
+                _, pos = client_to_route_position[i]
+                label_text = f"{nome_curto}\n[{pos}]"
+            else:
+                label_text = nome_curto
+
             ax.annotate(
-                nome_curto,
+                label_text,
                 xy=(lon, lat),
                 xytext=(3, 3),
                 textcoords="offset points",
@@ -1271,6 +1315,13 @@ route_colors = ["#FF0000", "#0000FF", "#00AA00", "#FF8800", "#8800FF", "#00FFFF"
 for idx, (algo_name, result) in enumerate(all_results.items()):
     ax = axes[idx]
 
+    # Criar mapeamento de cliente para (route_idx, posição)
+    client_to_route_position = {}
+    for r_idx, r_info in enumerate(result["route_summary"]):
+        route = r_info["route"]
+        for pos, client_id in enumerate(route):
+            client_to_route_position[client_id] = (r_idx, pos)
+
     # Plotar pontos de clientes
     for i in ids:
         lon, lat = clientes[i]["lon"], clientes[i]["lat"]
@@ -1297,10 +1348,18 @@ for idx, (algo_name, result) in enumerate(all_results.items()):
                 zorder=5,
             )
 
-        # Labels mais compactos
+        # Labels mais compactos com número de sequência (depot sempre [0])
         nome_curto = clientes[i]["nome"].split("(")[0].strip()[:15]
+        if i == 0:
+            label_text = f"{nome_curto}\n[0]"
+        elif i in client_to_route_position:
+            _, pos = client_to_route_position[i]
+            label_text = f"{nome_curto}\n[{pos}]"
+        else:
+            label_text = nome_curto
+
         ax.annotate(
-            nome_curto,
+            label_text,
             xy=(lon, lat),
             xytext=(3, 3),
             textcoords="offset points",
